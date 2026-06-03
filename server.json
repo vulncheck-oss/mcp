@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.vulncheck-oss/mcp",
+  "title": "VulnCheck",
+  "description": "Give AI assistants access to VulnCheck vulnerability data for researching CVEs, analyzing advisories, and identifying threats.",
+  "repository": {
+    "url": "https://github.com/vulncheck-oss/mcp",
+    "source": "github"
+  },
+  "version": "${VERSION}",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/vulncheck-oss/mcp:${VERSION}",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-e",
+          "description": "VulnCheck API token for authenticating requests.",
+          "value": "VULNCHECK_API_TOKEN={token}",
+          "isRequired": true,
+          "variables": {
+            "token": {
+              "isRequired": true,
+              "isSecret": true,
+              "format": "string"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

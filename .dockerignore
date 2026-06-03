@@ -1,0 +1,7 @@
+bin/
+dist/
+.git/
+.github/
+*_test.go
+testdata/
+*.md
