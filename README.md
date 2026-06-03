@@ -34,7 +34,6 @@ Download the latest release from the [Releases page](https://github.com/vulnchec
 - **[VS Code](docs/installation-guides/install-vscode.md)**
 - **[Windsurf](docs/installation-guides/install-windsurf.md)**
 - **[Cline](docs/installation-guides/install-cline.md)**
-- **[Roo Code](docs/installation-guides/install-roo-code.md)**
 - **[Gemini CLI](docs/installation-guides/install-gemini-cli.md)**
 - **[Codex CLI](docs/installation-guides/install-codex.md)**
 
