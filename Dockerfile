@@ -12,4 +12,4 @@ LABEL io.modelcontextprotocol.server.name="io.github.vulncheck-oss/mcp"
 COPY --from=builder /vulncheck-mcp /vulncheck-mcp
 EXPOSE 8080
 ENTRYPOINT ["/vulncheck-mcp"]
-CMD ["-transport", "http"]
+CMD ["-transport", "stdio"]
