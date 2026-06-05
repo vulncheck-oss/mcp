@@ -1,5 +1,8 @@
-# vulncheck-mcp
+<p align="center">
+    <img src="https://vulncheck.com/logo.png" align="center" alt="VulnCheck Logo" width="150" />
+</p>
 
+# The VulnCheck MCP Server
 The VulnCheck MCP Server connects AI assistants to [VulnCheck](https://vulncheck.com) vulnerability intelligence. Ask your AI tools about CVEs, exploits, advisories, and vulnerable packages — directly in your editor or terminal, using natural language.
 
 ### Use Cases
@@ -9,8 +12,6 @@ The VulnCheck MCP Server connects AI assistants to [VulnCheck](https://vulncheck
 - **Exploit intelligence**: Determine whether a CVE has known exploit code, active exploitation, or C2 indicators
 - **Advisory lookup**: Search vendor and ecosystem advisories by package, product, or keyword
 - **Index queries**: Query VulnCheck's breach, botnet, and threat intelligence indices for real-time context
-
----
 
 ## Requirements
 
