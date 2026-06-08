@@ -1,0 +1,53 @@
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch tags
+        run: git fetch --tags
+
+      - name: Wait for Docker image
+        run: |
+          TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          IMAGE="ghcr.io/vulncheck-oss/mcp:$TAG"
+
+          for i in {1..10}; do
+            if docker manifest inspect "$IMAGE" &>/dev/null; then
+              echo "✅ Docker image ready: $TAG"
+              break
+            fi
+            [ $i -eq 10 ] && { echo "❌ Timeout waiting for $TAG after 5 minutes"; exit 1; }
+            echo "⏳ Waiting for Docker image ($i/10)..."
+            sleep 30
+          done
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.7.9/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          chmod +x mcp-publisher
+
+      - name: Update server.json version
+        run: |
+          TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          VERSION=$(echo "$TAG" | sed 's/^v//')
+          sed -i "s/\${VERSION}/$VERSION/g" server.json
+          echo "Version: $VERSION"
+
+      - name: Validate server.json
+        run: python3 -m json.tool server.json > /dev/null && echo "✅ server.json valid"
+
+      - name: Login to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish
