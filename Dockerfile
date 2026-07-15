@@ -11,7 +11,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
         -o /vulncheck-mcp ./cmd/vulncheck-mcp
 
-FROM gcr.io/distroless/static-debian12@sha256:9c346e4be81b5ca7ff31a0d89eaeade58b0f95cfd3baed1f36083ddb47ca3160
+FROM gcr.io/distroless/static-debian12@sha256:61b7ccecebc7c474a531717de80a94709d20547cdcdaf740c25876f2a8e38b44
 LABEL io.modelcontextprotocol.server.name="io.github.vulncheck-oss/mcp"
 COPY --from=builder /vulncheck-mcp /vulncheck-mcp
 ENTRYPOINT ["/vulncheck-mcp"]
