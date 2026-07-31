@@ -40,10 +40,10 @@ func TestMakeSearchCVEHandler(t *testing.T) {
 			wantLen:   1,
 		},
 		{
-			name:       "zero limit defaults to 1",
+			name:       "zero limit defaults to 5",
 			args:       searchCVEArgs{CVE: "CVE-2099-99999"},
 			clientResp: &client.SearchCVEResult{Data: []vulncheck.IndexCveSearchHit{}, Total: 0},
-			wantQuery:  client.SearchCVEQuery{CVE: "CVE-2099-99999", Limit: 1},
+			wantQuery:  client.SearchCVEQuery{CVE: "CVE-2099-99999", Limit: 5},
 		},
 		{
 			name:      "client error propagates",
