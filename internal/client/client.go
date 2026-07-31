@@ -23,6 +23,7 @@ type Client interface {
 	IdentifyComponent(ctx context.Context, vendor, product, version string) ([]IdentifyResult, error)
 	GetRules(ctx context.Context, ruleType string) (string, error)
 	SearchCVE(ctx context.Context, q SearchCVEQuery) (*SearchCVEResult, error)
+	GetCVEAffectedProducts(ctx context.Context, cve string) (*CVEAffectedResult, error)
 	SearchDocs(ctx context.Context) (string, error)
 	GetDoc(ctx context.Context, docURL string) (string, error)
 	// V4 Endpoints

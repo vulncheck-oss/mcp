@@ -24,6 +24,7 @@ type mockClient struct {
 	listAdvisoryBackupsFn func(ctx context.Context) ([]vulncheck.BackupFeedItem, error)
 	getAdvisoryBackupFn   func(ctx context.Context, name string) (*vulncheck.BackupBackupResponse, error)
 	searchCVEFn           func(ctx context.Context, q client.SearchCVEQuery) (*client.SearchCVEResult, error)
+	getCVEAffectedFn      func(ctx context.Context, cve string) (*client.CVEAffectedResult, error)
 	searchDocsFn          func(ctx context.Context) (string, error)
 	getDocFn              func(ctx context.Context, url string) (string, error)
 }
@@ -90,6 +91,10 @@ func (m *mockClient) GetAdvisoryBackup(ctx context.Context, name string) (*vulnc
 
 func (m *mockClient) SearchCVE(ctx context.Context, q client.SearchCVEQuery) (*client.SearchCVEResult, error) {
 	return m.searchCVEFn(ctx, q)
+}
+
+func (m *mockClient) GetCVEAffectedProducts(ctx context.Context, cve string) (*client.CVEAffectedResult, error) {
+	return m.getCVEAffectedFn(ctx, cve)
 }
 
 func (m *mockClient) SearchDocs(ctx context.Context) (string, error) {

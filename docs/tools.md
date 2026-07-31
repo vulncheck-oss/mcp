@@ -26,6 +26,7 @@
 | Tool | Description |
 |------|-------------|
 | `search_cve` | Search all VulnCheck indices for a CVE ID. Returns matching records aggregated across advisories, exploits, threat intelligence, and vulnerability databases. Supports cursor-based pagination. |
+| `get_cve_affected_products` | Resolve a CVE ID to the software it affects: vendor/product pairs with vulnerable version ranges and CPE part, projected from both NIST's `configurations` and VulnCheck's `vcConfigurations`, with each entry attributed to its source. Prefer this over `search_cve` for "what does this CVE affect": `search_cve` returns a page ranked across all indices and usually omits the NVD record that carries the configurations. |
 
 ## CPE & PURL
 

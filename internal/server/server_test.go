@@ -37,4 +37,5 @@ func TestNewServer_ToolsRegistered(t *testing.T) {
 	assert.Contains(t, names, "search_index")
 	assert.Contains(t, names, "get_cpe_cves")
 	assert.Contains(t, names, "search_cpe")
+	assert.Contains(t, names, "get_cve_affected_products")
 }

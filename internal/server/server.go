@@ -24,6 +24,7 @@ var tools = []func(*mcp.Server, client.Client){
 	registerGetRules,
 	// v3/search/cve
 	registerSearchCVE,
+	registerGetCVEAffectedProducts,
 	// docs
 	registerSearchDocs,
 	registerGetDoc,
