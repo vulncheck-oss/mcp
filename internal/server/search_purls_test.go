@@ -89,3 +89,52 @@ func TestMakeSearchPURLsHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchPURLsVersionlessNote(t *testing.T) {
+	mock := &mockClient{
+		searchPURLsFn: func(_ context.Context, _ []string) (*client.SearchPURLsResult, error) {
+			return &client.SearchPURLsResult{Data: []v2.PurlBatchVulnFinding{}, Total: 0}, nil
+		},
+	}
+	handler := MakeSearchPURLsHandler(mock)
+
+	decode := func(t *testing.T, result *mcp.CallToolResult) searchPURLsResponse {
+		t.Helper()
+		var got searchPURLsResponse
+		got.SearchPURLsResult = &client.SearchPURLsResult{}
+		text := result.Content[0].(*mcp.TextContent).Text
+		require.NoError(t, json.Unmarshal([]byte(text), &got))
+		return got
+	}
+
+	t.Run("versionless purls are named in a note", func(t *testing.T) {
+		result, _, err := handler(context.Background(), nil, searchPURLsArgs{
+			PURLs: []string{"pkg:npm/@openai/codex", "pkg:npm/@anthropic-ai/claude-code@1.0.0"},
+		})
+		require.NoError(t, err)
+
+		got := decode(t, result)
+		assert.Contains(t, got.Note, "pkg:npm/@openai/codex")
+		assert.NotContains(t, got.Note, "claude-code@1.0.0")
+	})
+
+	t.Run("fully versioned purls produce no note", func(t *testing.T) {
+		result, _, err := handler(context.Background(), nil, searchPURLsArgs{
+			PURLs: []string{"pkg:npm/@anthropic-ai/claude-code@1.0.0", "pkg:hex/coherence@0.1.2"},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, decode(t, result).Note)
+	})
+}
+
+func TestPurlLacksVersion(t *testing.T) {
+	assert.True(t, purlLacksVersion("pkg:npm/@openai/codex"), "namespace @ must not count as a version")
+	assert.True(t, purlLacksVersion("pkg:npm/%40openai/codex"))
+	assert.True(t, purlLacksVersion("pkg:golang/github.com/gin-gonic/gin"))
+	assert.True(t, purlLacksVersion("pkg:npm/lodash?arch=x86"), "qualifiers are not a version")
+
+	assert.False(t, purlLacksVersion("pkg:npm/@openai/codex@0.30.0"))
+	assert.False(t, purlLacksVersion("pkg:npm/lodash@4.17.21"))
+	assert.False(t, purlLacksVersion("pkg:hex/coherence@0.1.2"))
+	assert.False(t, purlLacksVersion("pkg:npm/lodash@4.17.21?arch=x86#sub/path"))
+}
