@@ -108,13 +108,15 @@ func TestSearchPURLsVersionlessNote(t *testing.T) {
 	}
 
 	t.Run("versionless purls are named in a note", func(t *testing.T) {
+		// The versionless PURL must differ from the example the note itself cites,
+		// or the assertion below passes on that example alone.
 		result, _, err := handler(context.Background(), nil, searchPURLsArgs{
-			PURLs: []string{"pkg:npm/@openai/codex", "pkg:npm/@anthropic-ai/claude-code@1.0.0"},
+			PURLs: []string{"pkg:golang/github.com/gin-gonic/gin", "pkg:npm/@anthropic-ai/claude-code@1.0.0"},
 		})
 		require.NoError(t, err)
 
 		got := decode(t, result)
-		assert.Contains(t, got.Note, "pkg:npm/@openai/codex")
+		assert.Contains(t, got.Note, "pkg:golang/github.com/gin-gonic/gin")
 		assert.NotContains(t, got.Note, "claude-code@1.0.0")
 	})
 

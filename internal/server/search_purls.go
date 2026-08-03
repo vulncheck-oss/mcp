@@ -11,23 +11,24 @@ import (
 )
 
 type searchPURLsArgs struct {
-	PURLs []string `json:"purls" jsonschema:"Package URLs including a version, e.g. 'pkg:npm/@openai/codex@0.30.0' — the API returns findings only for fully versioned PURLs"`
+	PURLs []string `json:"purls" jsonschema:"Package URLs including a version, e.g. 'pkg:npm/@openai/codex@0.30.0' — findings are incomplete for a PURL without a version"`
 }
 
 var SearchPURLsTool = &mcp.Tool{
 	Name:  "search_purls",
 	Title: "Search Package URLs",
 	Description: "Return vulnerability findings for one or more Package URLs (PURLs). Each result includes associated CVEs and vulnerability details. " +
-		"PURLs must include a version (e.g. 'pkg:npm/@openai/codex@0.30.0'): the API silently returns no findings for a versionless PURL. " +
-		"For version-agnostic discovery use v4_search_advisory with package_name instead.",
+		"Include a version in every PURL (e.g. 'pkg:npm/@openai/codex@0.30.0'): version matching is skipped for a versionless PURL, so findings are " +
+		"incomplete and usually empty, and the tool flags them in a note. " +
+		"For version-agnostic discovery try v4_search_advisory with package_name, which matches package names exactly.",
 	Annotations: &mcp.ToolAnnotations{
 		ReadOnlyHint: true,
 	},
 }
 
 // searchPURLsResponse wraps the client result so the handler can flag versionless
-// PURLs in-band: the backend answers them with an empty result, which otherwise
-// reads as "no known vulnerabilities".
+// PURLs in-band: the backend skips version matching for them, so the result is
+// empty or partial, which otherwise reads as "no known vulnerabilities".
 type searchPURLsResponse struct {
 	*client.SearchPURLsResult
 	Note string `json:"note,omitempty"`
@@ -65,9 +66,13 @@ func MakeSearchPURLsHandler(vc client.Client) mcp.ToolHandlerFor[searchPURLsArgs
 		}
 		if len(versionless) > 0 {
 			response.Note = fmt.Sprintf(
-				"no findings are ever returned for PURLs without a version: %s — append a version "+
-					"(e.g. 'pkg:npm/@openai/codex@0.30.0') or use v4_search_advisory with package_name "+
-					"for version-agnostic discovery; an empty result here does not mean the package has no known vulnerabilities",
+				"findings are incomplete for these PURLs because they name no version: %s — version "+
+					"matching is skipped, so language-ecosystem packages return nothing at all and OS "+
+					"packages return only issues that have no fix available. Append a version "+
+					"(e.g. 'pkg:npm/@openai/codex@0.30.0') for a complete answer; an empty or short "+
+					"result here does not mean the package has no known vulnerabilities. For "+
+					"version-agnostic discovery try v4_search_advisory with package_name, which "+
+					"matches package names exactly.",
 				strings.Join(versionless, ", "))
 		}
 

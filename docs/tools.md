@@ -33,7 +33,7 @@
 |------|-------------|
 | `get_cpe_cves` | Return all CVE IDs associated with a CPE 2.3 string. Optionally restrict to CVEs where the CPE is confirmed vulnerable. |
 | `search_cpe` | Search for CPEs by component fields (vendor, product, version, part) and return matching CPEs with their associated CVEs. |
-| `search_purls` | Return vulnerability findings for one or more Package URLs (PURLs). Each result includes associated CVEs and vulnerability details. PURLs must include a version — the API returns no findings for a versionless PURL, and the tool flags them in a note. |
+| `search_purls` | Return vulnerability findings for one or more Package URLs (PURLs). Each result includes associated CVEs and vulnerability details. Include a version in every PURL — version matching is skipped for a versionless PURL, so findings are incomplete and usually empty, and the tool flags them in a note. |
 | `identify_component` | Convert a vendor, product, and optional version into best-match CPE and PURL identifiers with confidence levels. |
 
 ## Advisories (v4)
