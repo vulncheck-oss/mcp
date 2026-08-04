@@ -2,9 +2,12 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-
-	vulncheck "github.com/vulncheck-oss/sdk-go-v2/v2"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
 )
 
 type SearchAdvisoryQuery struct {
@@ -24,76 +27,107 @@ type SearchAdvisoryQuery struct {
 	Cursor        string
 }
 
+// SearchAdvisoryResult holds advisory records as raw JSON rather than generated
+// structs.
+//
+// The MCP server passes these records straight to the model and only ever reads
+// two paths itself (cveMetadata.cveId, and affected[].product/packageName), so
+// typing the payload buys nothing and couples the server to the API's OpenAPI
+// codegen. That coupling is not hypothetical: the generated types cannot decode
+// roughly 80% of /v4/advisory responses, because containers.*.source and
+// containers.*.metrics[].other.content are served as JSON strings wrapping JSON
+// objects. Raw passthrough is immune to that whole class of mismatch, and stays
+// correct once the upstream double-encoding is fixed.
 type SearchAdvisoryResult struct {
-	Data       []vulncheck.AdvisoryMitreCVEListV5Ref `json:"data"`
-	Total      int32                                 `json:"total"`
-	NextCursor string                                `json:"next_cursor,omitempty"`
+	Data       []json.RawMessage `json:"data"`
+	Total      int32             `json:"total"`
+	NextCursor string            `json:"next_cursor,omitempty"`
 }
 
+// advisoryEnvelope is the wire shape of /v4/advisory.
+type advisoryEnvelope struct {
+	Data []json.RawMessage `json:"data"`
+	Meta *struct {
+		Total      int32  `json:"total"`
+		NextCursor string `json:"next_cursor"`
+	} `json:"_meta"`
+}
+
+// SearchAdvisory queries /v4/advisory directly rather than through the generated
+// SDK client, so that a response the SDK's types reject still reaches the caller.
+// This follows the hand-rolled pattern already used by SearchIndex and
+// IdentifyComponent.
 func (c *VulncheckClient) SearchAdvisory(ctx context.Context, q SearchAdvisoryQuery) (*SearchAdvisoryResult, error) {
-	req := c.sdk.AdvisoryAPI.V4QueryAdvisories(c.authContext(ctx))
-	if q.Name != "" {
-		req = req.Name(q.Name)
-	}
-	if q.CveID != "" {
-		req = req.CveId(q.CveID)
-	}
-	if q.Vendor != "" {
-		req = req.Vendor(q.Vendor)
-	}
-	if q.Product != "" {
-		req = req.Product(q.Product)
-	}
-	if q.Platform != "" {
-		req = req.Platform(q.Platform)
-	}
-	if q.Version != "" {
-		req = req.Version(q.Version)
-	}
-	if q.CPE != "" {
-		req = req.Cpe(q.CPE)
-	}
-	if q.PackageName != "" {
-		req = req.PackageName(q.PackageName)
-	}
-	if q.PURL != "" {
-		req = req.Purl(q.PURL)
-	}
-	if q.UpdatedAfter != "" {
-		req = req.UpdatedAfter(q.UpdatedAfter)
-	}
-	if q.UpdatedBefore != "" {
-		req = req.UpdatedBefore(q.UpdatedBefore)
-	}
-	if q.Limit > 0 {
-		req = req.Limit(q.Limit)
-	}
-	if q.StartCursor {
-		req = req.StartCursor("true")
-	}
-	if q.Cursor != "" {
-		req = req.Cursor(q.Cursor)
+	u, err := url.Parse(c.baseURL + "/v4/advisory")
+	if err != nil {
+		return nil, fmt.Errorf("building URL: %w", err)
 	}
 
-	resp, httpResp, err := req.Execute()
-	if httpResp != nil {
-		defer httpResp.Body.Close()
+	p := u.Query()
+	for key, value := range map[string]string{
+		"name":          q.Name,
+		"cve_id":        q.CveID,
+		"vendor":        q.Vendor,
+		"product":       q.Product,
+		"platform":      q.Platform,
+		"version":       q.Version,
+		"cpe":           q.CPE,
+		"package_name":  q.PackageName,
+		"purl":          q.PURL,
+		"updatedAfter":  q.UpdatedAfter,
+		"updatedBefore": q.UpdatedBefore,
+		"cursor":        q.Cursor,
+	} {
+		if value != "" {
+			p.Set(key, value)
+		}
 	}
+	if q.Cursor == "" && q.StartCursor {
+		p.Set("start_cursor", "true")
+	}
+	if q.Limit > 0 {
+		p.Set("limit", strconv.FormatInt(int64(q.Limit), 10))
+	}
+	u.RawQuery = p.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.userAgent)
+
+	resp, err := c.http.Do(req) //nolint:gosec // G704: baseURL is trusted config
 	if err != nil {
 		return nil, fmt.Errorf("searching advisories: %w", err)
 	}
+	defer resp.Body.Close()
 
-	data := resp.Data
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("searching advisories: HTTP %d: %s", resp.StatusCode, body)
+	}
+
+	var envelope advisoryEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	data := envelope.Data
 	if data == nil {
-		data = []vulncheck.AdvisoryMitreCVEListV5Ref{}
+		data = []json.RawMessage{}
 	}
 
-	var total int32
-	var nextCursor string
-	if resp.Meta != nil {
-		total = resp.Meta.GetTotal()
-		nextCursor = resp.Meta.GetNextCursor()
+	result := &SearchAdvisoryResult{Data: data}
+	if envelope.Meta != nil {
+		result.Total = envelope.Meta.Total
+		result.NextCursor = envelope.Meta.NextCursor
 	}
 
-	return &SearchAdvisoryResult{Data: data, Total: total, NextCursor: nextCursor}, nil
+	return result, nil
 }

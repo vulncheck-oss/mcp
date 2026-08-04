@@ -10,14 +10,17 @@ import (
 )
 
 type getCPECVEsArgs struct {
-	CPE            string `json:"cpe"                        jsonschema:"CPE 2.3 string, e.g. 'cpe:2.3:a:apache:log4j:2.14.1:*:*:*:*:*:*:*'"`
+	CPE            string `json:"cpe"                        jsonschema:"CPE 2.3 string, e.g. 'cpe:2.3:a:apache:log4j:2.14.1:*:*:*:*:*:*:*'. Any attribute accepts '*' and '?' wildcards, e.g. 'cpe:2.3:a:apache:log4j*:*:*:*:*:*:*:*'"`
 	VulnerableOnly bool   `json:"vulnerable_only,omitempty"  jsonschema:"When true, return only CVEs where the CPE is confirmed vulnerable (default false)"`
 }
 
 var GetCPECVEsTool = &mcp.Tool{
-	Name:        "get_cpe_cves",
-	Title:       "Get CPE CVEs",
-	Description: "Return all CVE IDs associated with a CPE 2.3 string. Optionally restrict to CVEs where the CPE is confirmed vulnerable.",
+	Name:  "get_cpe_cves",
+	Title: "Get CPE CVEs",
+	Description: "Return all CVE IDs associated with a CPE 2.3 string. Optionally restrict to CVEs where the CPE is confirmed vulnerable. " +
+		"Any attribute accepts '*' and '?' wildcards, so a trailing wildcard on the product covers every product sharing that prefix in one call — " +
+		"prefer this over search_cpe when exploring a vendor, because search_cpe returns every matching CPE and its response can reach tens of megabytes. " +
+		"Wildcarding both vendor and product is unbounded and should be avoided.",
 	Annotations: &mcp.ToolAnnotations{
 		ReadOnlyHint: true,
 	},
