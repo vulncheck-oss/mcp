@@ -36,6 +36,18 @@ func jsonResp(status int, v any) *http.Response {
 	}
 }
 
+// newAPITestClient builds a client for the endpoints that issue their own HTTP
+// requests rather than going through the generated SDK, so the fake transport has
+// to sit on c.http instead of on the SDK configuration.
+func newAPITestClient(fn roundTripFunc) *VulncheckClient {
+	return &VulncheckClient{
+		http:      &http.Client{Transport: fn},
+		baseURL:   "https://api.vulncheck.com",
+		token:     "test-token",
+		userAgent: "vulncheck-mcp/test",
+	}
+}
+
 func newDocsTestClient(fn roundTripFunc) *VulncheckClient {
 	return &VulncheckClient{
 		http:      &http.Client{Transport: fn},
