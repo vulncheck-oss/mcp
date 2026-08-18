@@ -64,15 +64,6 @@ const (
 	// maxListedProducts caps the product names reported when the product filter is
 	// dropped, so a large vendor cannot flood the response.
 	maxListedProducts = 25
-
-	// maxResponseBytes bounds the serialized response at roughly 20k tokens.
-	//
-	// `limit` bounds the number of rows, not their size, and advisory records vary by
-	// three orders of magnitude: a ten-row page for a large vendor has been measured
-	// at 6.2 MB (~1.5M tokens), and a single record can exceed 150 KB. Without a byte
-	// bound a widened search can destroy the caller's context, so rows are dropped
-	// whole until the response fits and the count dropped is reported.
-	maxResponseBytes = 80_000
 )
 
 const (
@@ -172,7 +163,7 @@ func MakeSearchAdvisoryHandler(vc client.Client) mcp.ToolHandlerFor[searchAdviso
 			}
 		}
 
-		if dropped, ids := capResponseBytes(&response); dropped > 0 {
+		if dropped, ids := capAdvisoryBytes(&response); dropped > 0 {
 			response.Dropped = dropped
 			response.DroppedCVEs = ids
 			response.Notes = append(response.Notes, truncatedNote)
@@ -194,57 +185,24 @@ func MakeSearchAdvisoryHandler(vc client.Client) mcp.ToolHandlerFor[searchAdviso
 	}
 }
 
-// capResponseBytes drops whole rows until the response fits inside
-// maxResponseBytes, returning how many were dropped and naming them.
-//
-// Rows are never abridged: a partial advisory record would be indistinguishable
-// from a complete one and could be read as authoritative. An oversized row is
-// skipped rather than ending the walk, so one enormous record cannot hide the
-// smaller ones behind it — a single advisory has been measured at ~700 KB alone,
-// which is why keeping "at least one row" is not a safe floor here. Dropped rows
-// are named so the caller can fetch them individually by cve_id.
-func capResponseBytes(response *searchAdvisoryResponse) (int, []string) {
-	if response.SearchAdvisoryResult == nil || len(response.Data) == 0 {
+// capAdvisoryBytes trims the response to the shared byte budget, naming dropped
+// records by CVE ID so the caller can fetch them individually afterwards.
+func capAdvisoryBytes(response *searchAdvisoryResponse) (int, []string) {
+	if response.SearchAdvisoryResult == nil {
 		return 0, nil
 	}
 
-	encoded, err := json.Marshal(response)
-	if err != nil || len(encoded) <= maxResponseBytes {
-		return 0, nil
-	}
+	bound := boundRows(rowBound{
+		Envelope: response,
+		Rows:     response.Data,
+		Identify: func(raw json.RawMessage) string {
+			return parseAdvisoryRecord(raw).CveMetadata.CveID
+		},
+		MaxNamed: maxListedProducts,
+	})
 
-	// Budget only the rows; the surrounding envelope and notes are small and fixed.
-	budget := maxResponseBytes - (len(encoded) - rowsSize(response.Data))
-	kept := make([]json.RawMessage, 0, len(response.Data))
-	var dropped []string
-	used := 0
-
-	for _, raw := range response.Data {
-		size := len(raw) + 1 // the comma that joins it to the previous row
-		if used+size > budget {
-			record := parseAdvisoryRecord(raw)
-			if id := record.CveMetadata.CveID; id != "" && len(dropped) < maxListedProducts {
-				dropped = append(dropped, id)
-			}
-			continue
-		}
-		used += size
-		kept = append(kept, raw)
-	}
-
-	count := len(response.Data) - len(kept)
-	response.Data = kept
-	return count, dropped
-}
-
-// rowsSize reports the serialized size of the row list. Raw records need no
-// re-encoding, so this is just their lengths plus the separators.
-func rowsSize(data []json.RawMessage) int {
-	size := 2 // the enclosing brackets
-	for _, raw := range data {
-		size += len(raw) + 1
-	}
-	return size
+	response.Data = bound.Kept
+	return bound.Dropped, bound.Names
 }
 
 func advisoryQuery(args searchAdvisoryArgs) client.SearchAdvisoryQuery {
