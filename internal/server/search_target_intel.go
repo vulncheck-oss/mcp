@@ -33,7 +33,7 @@ type searchTargetIntelArgs struct {
 	Protocol        string `json:"protocol,omitempty"       jsonschema:"Application or service protocol observed on the port, e.g. 'http', 'telnet', 'ssh'. This is the service-level protocol, not the transport — use transport for that"`
 	Transport       string `json:"transport,omitempty"      jsonschema:"Transport protocol, e.g. 'tcp'"`
 	Port            int    `json:"port,omitempty"           jsonschema:"Port the service was observed on, e.g. 443"`
-	Classifications string `json:"classifications,omitempty" jsonschema:"Classification tag to filter by: 'c2', 'scanner', 'proxy', 'attack-infrastructure', 'honeypot', 'mcp', 'cdn', 'sector' or 'canary-attacker'. A type:product form is also accepted, e.g. 'c2:cobalt-strike'"`
+	Classifications string `json:"classifications,omitempty" jsonschema:"Classification to filter by: 'c2', 'scanner', 'proxy', 'attack-infrastructure', 'honeypot', 'mcp', 'cdn', 'sector' or 'canary-attacker'. A specific framework or product name can also be given on its own, e.g. 'cobalt-strike'. Do not combine the two as 'c2:cobalt-strike' — the suffix is ignored and the result covers the whole classification"`
 	ContainsCVE     *bool  `json:"contains_cve,omitempty"   jsonschema:"When true, return only hosts whose fingerprinted service has an associated CVE; when false, only those without"`
 	Limit           int    `json:"limit,omitempty"          jsonschema:"Rows per page, max 200 (default 10). Records are large, so the response is also bounded by size and may return fewer"`
 	StartCursor     bool   `json:"start_cursor,omitempty"   jsonschema:"Set true on the first call to enable cursor-based pagination"`

@@ -64,7 +64,7 @@ type productResponse struct {
 	Total      int               `json:"total"`
 	NextCursor string            `json:"next_cursor,omitempty"`
 	Dropped    int               `json:"dropped_for_size,omitempty"`
-	DroppedIPs []string          `json:"dropped_ips,omitempty"`
+	DroppedIDs []string          `json:"dropped_ids,omitempty"`
 	Notes      []string          `json:"notes,omitempty"`
 }
 
@@ -79,8 +79,26 @@ func productLimit(requested, fallback int) int {
 	return min(requested, maxProductLimit)
 }
 
-// rowAddress names a row for the dropped list. These indices are keyed by host or
-// source address rather than by CVE, so the useful identifier is an IP.
+// rowCVE names a row by CVE ID, for indices keyed by vulnerability rather than host.
+//
+// Both fields are read because the exploit index puts the CVE string in id, while
+// other vulnerability-keyed indices carry it in cve.
+func rowCVE(raw json.RawMessage) string {
+	var r struct {
+		ID  string `json:"id"`
+		CVE string `json:"cve"`
+	}
+	if json.Unmarshal(raw, &r) != nil {
+		return ""
+	}
+	if r.ID != "" {
+		return r.ID
+	}
+	return r.CVE
+}
+
+// rowAddress names a row for the dropped list. Host-oriented indices are keyed by
+// address rather than by CVE, so the useful identifier is an IP.
 func rowAddress(raw json.RawMessage) string {
 	var r struct {
 		IP    string `json:"ip"`
@@ -98,6 +116,12 @@ func rowAddress(raw json.RawMessage) string {
 // newProductResponse assembles a bounded response from an index result, attaching
 // the notes that stop a sample being read as the complete set.
 func newProductResponse(index string, result *client.IndexQueryResult) productResponse {
+	return newProductResponseWith(index, result, rowAddress)
+}
+
+// newProductResponseWith lets a caller name dropped rows in whatever way suits its
+// index, since what identifies a row differs between host and vulnerability data.
+func newProductResponseWith(index string, result *client.IndexQueryResult, identify func(json.RawMessage) string) productResponse {
 	response := productResponse{
 		Index:      index,
 		Data:       result.Data,
@@ -108,7 +132,7 @@ func newProductResponse(index string, result *client.IndexQueryResult) productRe
 	bound := boundRows(rowBound{
 		Envelope: &response,
 		Rows:     response.Data,
-		Identify: rowAddress,
+		Identify: identify,
 		MaxNamed: 25,
 	})
 	response.Data = bound.Kept
@@ -116,7 +140,7 @@ func newProductResponse(index string, result *client.IndexQueryResult) productRe
 
 	if bound.Dropped > 0 {
 		response.Dropped = bound.Dropped
-		response.DroppedIPs = bound.Names
+		response.DroppedIDs = bound.Names
 		response.Notes = append(response.Notes, productTruncatedNote)
 	}
 	// An empty page with a non-zero total is not the same as no data, and must not be

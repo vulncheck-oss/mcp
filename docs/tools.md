@@ -19,6 +19,7 @@ Your MCP client lists the available arguments for each tool; the summaries below
 | `search_target_intel` | Find internet-facing hosts confirmed to be running vulnerable software, mapped to CVEs by version-level fingerprinting. Answers "which hosts are exposed to this CVE", and locates infrastructure by classification. Filter by CVE, software identity, network, or location. |
 | `search_ip_intel` | Find attacker and target IP infrastructure over a rolling window — command-and-control servers, honeypots, and hosts potentially targeted by initial-access exploits — with geolocation and ASN enrichment. Choose the period with `window`. |
 | `search_canaries` | Find exploitation attempts observed against VulnCheck's globally deployed vulnerable canary hosts. Because the canary is genuinely vulnerable, a hit is direct evidence of in-the-wild attack rather than an inference. Choose the period with `window`. |
+| `search_curated_exploits` | Search curated exploit intelligence by how good the exploit is and how thoroughly it was validated, not merely whether one exists. Answers "which vulnerabilities have weaponized exploit code", "what have VulnCheck's exploit developers reviewed", and "what is in the VulnCheck KEV catalogue but not CISA's". Filter by maturity, validation level, either KEV catalogue, CVE, or a change-date range. |
 
 ## Backups
 
@@ -53,6 +54,7 @@ Your MCP client lists the available arguments for each tool; the summaries below
 
 | Tool | Description |
 |------|-------------|
+| `list_recent_advisories` | Summarise which advisories were published or updated over a time window — the answer to "what changed recently". Returns a compact digest of identity, provenance and timing rather than full records, so a page costs a fraction of the underlying data. Defaults to the last 24 hours; optionally scoped to one feed, vendor or product. Reports which feeds the page came from, and flags when a single feed dominates it. Follow up with `v4_search_advisory` and a `cve_id` for a record in full. |
 | `v4_list_advisories` | List all available VulnCheck advisory feeds. Call this first to discover which advisory names can be passed to `v4_search_advisory`. |
 | `v4_search_advisory` | Search VulnCheck v4 advisory feeds. Filter by advisory name, CVE ID, vendor, product, version, CPE, PURL, and more. This is the tool that finds advisories carrying no CPE data, such as GHSA records for npm, PyPI and Go software — prefer it over the CPE tools for package-ecosystem products. Vendor and product are matched exactly and case-sensitively against the CNA-published strings; alternative capitalisations are retried automatically and an unmatchable product filter is dropped, with both explained in notes. |
 | `v4_list_advisory_backups` | List all VulnCheck v4 advisory backup feeds and their availability. Call this first to discover which feed names can be passed to `v4_get_advisory_backup`. |
