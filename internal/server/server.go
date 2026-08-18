@@ -40,6 +40,7 @@ var tools = []func(*mcp.Server, client.Client){
 	// v4/advisory
 	registerListAdvisories,
 	registerSearchAdvisory,
+	registerListRecentAdvisories,
 	// v4/backup
 	registerListAdvisoryBackups,
 	registerGetAdvisoryBackup,
