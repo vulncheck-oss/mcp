@@ -52,6 +52,7 @@ Your MCP client lists the available arguments for each tool; the summaries below
 
 | Tool | Description |
 |------|-------------|
+| `list_recent_advisories` | Summarise which advisories were published or updated over a time window — the answer to "what changed recently". Returns a compact digest of identity, provenance and timing rather than full records, so a page costs a fraction of the underlying data. Defaults to the last 24 hours; optionally scoped to one feed, vendor or product. Reports which feeds the page came from, and flags when a single feed dominates it. Follow up with `v4_search_advisory` and a `cve_id` for a record in full. |
 | `v4_list_advisories` | List all available VulnCheck advisory feeds. Call this first to discover which advisory names can be passed to `v4_search_advisory`. |
 | `v4_search_advisory` | Search VulnCheck v4 advisory feeds. Filter by advisory name, CVE ID, vendor, product, version, CPE, PURL, and more. This is the tool that finds advisories carrying no CPE data, such as GHSA records for npm, PyPI and Go software — prefer it over the CPE tools for package-ecosystem products. Vendor and product are matched exactly and case-sensitively against the CNA-published strings; alternative capitalisations are retried automatically and an unmatchable product filter is dropped, with both explained in notes. |
 | `v4_list_advisory_backups` | List all VulnCheck v4 advisory backup feeds and their availability. Call this first to discover which feed names can be passed to `v4_get_advisory_backup`. |
