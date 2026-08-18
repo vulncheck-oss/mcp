@@ -14,6 +14,7 @@ var tools = []func(*mcp.Server, client.Client){
 	registerSearchTargetIntel,
 	registerSearchIPIntel,
 	registerSearchCanaries,
+	registerSearchCuratedExploits,
 	// v3/backups
 	registerListBackups,
 	registerGetBackup,

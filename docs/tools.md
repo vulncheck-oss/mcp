@@ -18,6 +18,7 @@ Your MCP client lists the available arguments for each tool; the summaries below
 |------|-------------|
 | `search_target_intel` | Find internet-facing hosts confirmed to be running vulnerable software, mapped to CVEs by version-level fingerprinting. Answers "which hosts are exposed to this CVE", and locates infrastructure by classification. Filter by CVE, software identity, network, or location. |
 | `search_ip_intel` | Find attacker and target IP infrastructure over a rolling window — command-and-control servers, honeypots, and hosts potentially targeted by initial-access exploits — with geolocation and ASN enrichment. Choose the period with `window`. |
+| `search_curated_exploits` | Search curated exploit intelligence by how good the exploit is and how thoroughly it was validated, not merely whether one exists. Answers "which vulnerabilities have weaponized exploit code", "what have VulnCheck's exploit developers reviewed", and "what is in the VulnCheck KEV catalogue but not CISA's". Filter by maturity, validation level, either KEV catalogue, CVE, or a change-date range. |
 | `search_canaries` | Find exploitation attempts observed against VulnCheck's globally deployed vulnerable canary hosts. Because the canary is genuinely vulnerable, a hit is direct evidence of in-the-wild attack rather than an inference. Choose the period with `window`. |
 
 ## Backups
