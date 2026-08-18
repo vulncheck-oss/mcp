@@ -32,9 +32,9 @@ type describeIndexArgs struct {
 var DescribeIndexTool = &mcp.Tool{
 	Name:  "describe_index",
 	Title: "Describe Index",
-	Description: "Report which filters an index accepts, how large it is, and which tool to use for it. " +
+	Description: "Report which filters an index accepts and the values each one takes, how large it is, and which tool to use for it. " +
 		"Call this before search_index against an unfamiliar index: indices accept different filters, and one an index does not support has no effect rather than raising an error, so a query can appear to filter when it does not. " +
-		"Filters are read from the index itself, so the list reflects what it currently supports.",
+		"Filters and their accepted values are read from the index itself, so they reflect what it currently supports rather than what is documented.",
 	Annotations: &mcp.ToolAnnotations{
 		ReadOnlyHint: true,
 	},
@@ -96,11 +96,11 @@ func MakeDescribeIndexHandler(vc client.Client) mcp.ToolHandlerFor[describeIndex
 
 // intersect keeps the members of advertised that the tool can actually send,
 // preserving the index's own ordering.
-func intersect(advertised []string, supported map[string]bool) []string {
+func intersect(advertised []client.IndexFilter, supported map[string]bool) []string {
 	out := make([]string, 0, len(advertised))
 	for _, f := range advertised {
-		if supported[f] {
-			out = append(out, f)
+		if supported[f.Name] {
+			out = append(out, f.Name)
 		}
 	}
 	return out

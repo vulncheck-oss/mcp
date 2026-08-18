@@ -67,8 +67,13 @@ func TestDedicatedTools_NameRegisteredTools(t *testing.T) {
 
 func TestDescribeIndex_ReportsFiltersAndSize(t *testing.T) {
 	vc := describeMock(&client.IndexDescription{
-		Name:           "vulncheck-nvd2",
-		Filters:        []string{"cve", "alias", "threat_actor", "kind"},
+		Name: "vulncheck-nvd2",
+		Filters: []client.IndexFilter{
+			{Name: "cve", Accepts: "CVE-YYYY-N{4-7}"},
+			{Name: "alias"},
+			{Name: "threat_actor"},
+			{Name: "kind"},
+		},
 		TotalDocuments: 384273,
 		DefaultSort:    "lastModified",
 	}, nil)
@@ -80,7 +85,12 @@ func TestDescribeIndex_ReportsFiltersAndSize(t *testing.T) {
 	assert.Equal(t, "vulncheck-nvd2", got.Name)
 	assert.Equal(t, 384273, got.TotalDocuments)
 	assert.Equal(t, "lastModified", got.DefaultSort)
-	assert.Equal(t, []string{"cve", "alias", "threat_actor", "kind"}, got.Filters)
+	assert.Equal(t, []client.IndexFilter{
+		{Name: "cve", Accepts: "CVE-YYYY-N{4-7}"},
+		{Name: "alias"},
+		{Name: "threat_actor"},
+		{Name: "kind"},
+	}, got.Filters, "the accepted values come through, not just the names")
 }
 
 // An index without a dedicated tool is served by search_index, which cannot send
@@ -88,8 +98,10 @@ func TestDescribeIndex_ReportsFiltersAndSize(t *testing.T) {
 // caller assuming an advertised filter is reachable.
 func TestDescribeIndex_ReportsWhichFiltersTheGenericToolCanSend(t *testing.T) {
 	vc := describeMock(&client.IndexDescription{
-		Name:    "vulncheck-nvd2",
-		Filters: []string{"cve", "threat_actor", "kind", "matches"},
+		Name: "vulncheck-nvd2",
+		Filters: []client.IndexFilter{
+			{Name: "cve"}, {Name: "threat_actor"}, {Name: "kind"}, {Name: "matches"},
+		},
 	}, nil)
 
 	res, _, err := MakeDescribeIndexHandler(vc)(context.Background(), nil, describeIndexArgs{Index: "vulncheck-nvd2"})
@@ -110,7 +122,10 @@ func TestDescribeIndex_PointsAtTheDedicatedTool(t *testing.T) {
 		"vulncheck-canaries-3d": "search_canaries",
 	} {
 		t.Run(index, func(t *testing.T) {
-			vc := describeMock(&client.IndexDescription{Name: index, Filters: []string{"cve", "asn"}}, nil)
+			vc := describeMock(&client.IndexDescription{
+				Name:    index,
+				Filters: []client.IndexFilter{{Name: "cve"}, {Name: "asn", Accepts: "AS[0-9]+"}},
+			}, nil)
 			res, _, err := MakeDescribeIndexHandler(vc)(context.Background(), nil, describeIndexArgs{Index: index})
 			require.NoError(t, err)
 
@@ -128,4 +143,34 @@ func TestDescribeIndex_PropagatesErrors(t *testing.T) {
 		context.Background(), nil, describeIndexArgs{Index: "nope"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "describing index")
+}
+
+// The published values are the point of this tool as much as the names are. Guessing a
+// vocabulary, or taking one from documentation, has produced filters that were accepted
+// and then silently not applied.
+func TestDescribeIndex_ReportsTheAcceptedValues(t *testing.T) {
+	vc := describeMock(&client.IndexDescription{
+		Name: "exploits",
+		Filters: []client.IndexFilter{
+			{Name: "max_exploit_maturity", Accepts: "poc|weaponized"},
+			{Name: "in_kev", Accepts: "true|false"},
+			{Name: "cve", Accepts: "^CVE-\\d{4}-\\d{4,7}$"},
+			{Name: "vendor"},
+		},
+	}, nil)
+
+	res, _, err := MakeDescribeIndexHandler(vc)(context.Background(), nil, describeIndexArgs{Index: "exploits"})
+	require.NoError(t, err)
+
+	got := decodeDescribe(t, res)
+	byName := map[string]string{}
+	for _, f := range got.Filters {
+		byName[f.Name] = f.Accepts
+	}
+	assert.Equal(t, "poc|weaponized", byName["max_exploit_maturity"],
+		"a closed vocabulary is reported so a caller need not guess it")
+	assert.Equal(t, "true|false", byName["in_kev"])
+	assert.Equal(t, "^CVE-\\d{4}-\\d{4,7}$", byName["cve"],
+		"a pattern is reported verbatim for free-form parameters")
+	assert.Empty(t, byName["vendor"], "a parameter with no published values reports none")
 }

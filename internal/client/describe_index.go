@@ -13,9 +13,11 @@ import (
 type IndexDescription struct {
 	Name string `json:"name"`
 
-	// Filters are the query parameters the index reports as supported. This is the
-	// index's own account of itself, which is more current than any documentation.
-	Filters []string `json:"filters"`
+	// Filters are the query parameters the index reports as supported, each with the
+	// accepted values or pattern where the index publishes one. This is the index's own
+	// account of itself, which is more current than any documentation — and in at least
+	// one case contradicts it.
+	Filters []IndexFilter `json:"filters"`
 
 	// TotalDocuments is the size of the index, useful for judging whether a query
 	// against it needs narrowing before it is worth running.
@@ -25,14 +27,27 @@ type IndexDescription struct {
 	DefaultSort string `json:"default_sort,omitempty"`
 }
 
-// describeMeta is the subset of the index envelope this needs. Parameters arrive as
-// objects carrying a name and sometimes a format; only the name is of use here.
+// IndexFilter is one supported query parameter.
+type IndexFilter struct {
+	Name string `json:"name"`
+
+	// Accepts is the values or pattern the index publishes for this parameter, verbatim
+	// — a closed vocabulary as alternatives, or a regular expression or date layout for
+	// free-form parameters. Empty when the index publishes none.
+	//
+	// This is the authoritative vocabulary. Guessing at one, or taking it from
+	// documentation, has produced filters that were silently ignored.
+	Accepts string `json:"accepts,omitempty"`
+}
+
+// describeMeta is the subset of the index envelope this needs.
 type describeMeta struct {
 	Meta struct {
 		TotalDocuments int    `json:"total_documents"`
 		Sort           string `json:"sort"`
 		Parameters     []struct {
-			Name string `json:"name"`
+			Name   string `json:"name"`
+			Format string `json:"format"`
 		} `json:"parameters"`
 	} `json:"_meta"`
 }
@@ -83,16 +98,22 @@ func (c *VulncheckClient) DescribeIndex(ctx context.Context, index string) (*Ind
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	// The parameter list can repeat a name; de-duplicate so the caller sees each
-	// filter once.
-	seen := map[string]bool{}
-	filters := make([]string, 0, len(envelope.Meta.Parameters))
+	// The parameter list can repeat a name; de-duplicate so the caller sees each filter
+	// once, preferring whichever entry carries a published format.
+	seenAt := map[string]int{}
+	filters := make([]IndexFilter, 0, len(envelope.Meta.Parameters))
 	for _, p := range envelope.Meta.Parameters {
-		if p.Name == "" || seen[p.Name] {
+		if p.Name == "" {
 			continue
 		}
-		seen[p.Name] = true
-		filters = append(filters, p.Name)
+		if at, seen := seenAt[p.Name]; seen {
+			if filters[at].Accepts == "" {
+				filters[at].Accepts = p.Format
+			}
+			continue
+		}
+		seenAt[p.Name] = len(filters)
+		filters = append(filters, IndexFilter{Name: p.Name, Accepts: p.Format})
 	}
 
 	return &IndexDescription{
