@@ -11,16 +11,19 @@ import (
 )
 
 var ListIndicesTool = &mcp.Tool{
-	Name:        "list_indices",
-	Title:       "List Indices",
-	Description: "List all VulnCheck indices. Call this first to discover which index names can be passed to search_index. Accepts an optional 'search' parameter to filter results by name or description.",
+	Name:  "list_indices",
+	Title: "List Indices",
+	Description: "List VulnCheck index names. Call this first to discover which index names exist. " +
+		"Returns names only unless a search narrows the set, since the full catalogue is large; descriptions can be requested explicitly. " +
+		"Use describe_index to find out which filters an index accepts and which tool to query it with.",
 	Annotations: &mcp.ToolAnnotations{
 		ReadOnlyHint: true,
 	},
 }
 
 type listIndicesArgs struct {
-	Search string `json:"search,omitempty" jsonschema:"Optional filter — return only indices whose name or description contains this string (case-insensitive)"`
+	Search             string `json:"search,omitempty"              jsonschema:"Optional filter — return only indices whose name or description contains this string (case-insensitive)"`
+	IncludeDescription *bool  `json:"include_description,omitempty" jsonschema:"Include each index's description. Omitted by default because the full catalogue is large, and included automatically when search narrows it. Set true to force, false to suppress"`
 }
 
 type listEntriesResult struct {
@@ -39,6 +42,14 @@ func MakeListIndicesHandler(vc client.Client) mcp.ToolHandlerFor[listIndicesArgs
 			return nil, nil, fmt.Errorf("listing indices: %w", err)
 		}
 
+		// Descriptions are the bulk of this response. A search narrows the set enough
+		// that they are worth including, so the default follows the caller's intent
+		// rather than making them ask twice.
+		withDescription := args.Search != ""
+		if args.IncludeDescription != nil {
+			withDescription = *args.IncludeDescription
+		}
+
 		if args.Search != "" {
 			q := strings.ToLower(args.Search)
 			filtered := entries[:0]
@@ -48,6 +59,12 @@ func MakeListIndicesHandler(vc client.Client) mcp.ToolHandlerFor[listIndicesArgs
 				}
 			}
 			entries = filtered
+		}
+
+		if !withDescription {
+			for i := range entries {
+				entries[i].Description = ""
+			}
 		}
 
 		out, err := json.Marshal(listEntriesResult{
