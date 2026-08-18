@@ -74,6 +74,10 @@ type SearchIndexQuery struct {
 	MispID      string
 	Ransomware  string
 	Botnet      string
+
+	// JVNDB is the Japanese vulnerability database identifier, e.g.
+	// "JVNDB-2025-007355".
+	JVNDB string
 }
 
 type indexResponseMeta struct {
@@ -134,6 +138,7 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 		"misp_id":            q.MispID,
 		"ransomware":         q.Ransomware,
 		"botnet":             q.Botnet,
+		"jvndb":              q.JVNDB,
 	} {
 		if value != "" {
 			p.Set(key, value)

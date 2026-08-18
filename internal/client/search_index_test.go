@@ -296,3 +296,23 @@ func TestSearchIndex_OmitsZeroPort(t *testing.T) {
 	_, present := got["port"]
 	assert.False(t, present)
 }
+
+// jvndb reaches the API under its own key like the other identifier filters.
+func TestSearchIndex_SendsJVNDB(t *testing.T) {
+	var got url.Values
+	c := newAPITestClient(func(r *http.Request) (*http.Response, error) {
+		got = r.URL.Query()
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{"total_documents": 1},
+			"data":  []any{},
+		}), nil
+	})
+
+	_, err := c.SearchIndex(context.Background(), SearchIndexQuery{
+		Index: "vulncheck-nvd2",
+		JVNDB: "JVNDB-2025-007355",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "JVNDB-2025-007355", got.Get("jvndb"))
+}

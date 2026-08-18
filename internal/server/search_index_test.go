@@ -92,3 +92,45 @@ func TestMakeSearchIndexHandler(t *testing.T) {
 		})
 	}
 }
+
+// TestMakeSearchIndexHandler_ThreatIntelFilters covers the filters shared by the
+// vulnerability, exploit and threat-intelligence indices, which were previously
+// unreachable through this tool. Each one was confirmed against the API before
+// being exposed.
+func TestMakeSearchIndexHandler_ThreatIntelFilters(t *testing.T) {
+	var got client.SearchIndexQuery
+	vc := &mockClient{
+		searchIndexFn: func(_ context.Context, q client.SearchIndexQuery) (*client.IndexQueryResult, error) {
+			got = q
+			return &client.IndexQueryResult{Data: []json.RawMessage{}}, nil
+		},
+	}
+
+	_, _, err := MakeSearchIndexHandler(vc)(context.Background(), nil, searchIndexArgs{
+		Index:       "threat-actors",
+		ThreatActor: "UNC2630",
+		MitreID:     "G0013",
+		MispID:      "3570552c-c46f-428e-9472-744a14e6ece7",
+		Ransomware:  "Cactus",
+		Botnet:      "Fbot",
+		JVNDB:       "JVNDB-2025-007355",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "threat-actors", got.Index)
+	assert.Equal(t, "UNC2630", got.ThreatActor)
+	assert.Equal(t, "G0013", got.MitreID)
+	assert.Equal(t, "3570552c-c46f-428e-9472-744a14e6ece7", got.MispID)
+	assert.Equal(t, "Cactus", got.Ransomware)
+	assert.Equal(t, "Fbot", got.Botnet)
+	assert.Equal(t, "JVNDB-2025-007355", got.JVNDB)
+}
+
+// The product indices have dedicated tools that expose host and network filters
+// this one cannot, so the description has to send callers there rather than leaving
+// them to discover the worse path.
+func TestSearchIndexTool_PointsAtTheProductTools(t *testing.T) {
+	for _, tool := range []string{"search_ip_intel", "search_target_intel", "search_canaries"} {
+		assert.Contains(t, SearchIndexTool.Description, tool)
+	}
+}
