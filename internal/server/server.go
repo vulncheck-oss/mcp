@@ -9,6 +9,10 @@ var tools = []func(*mcp.Server, client.Client){
 	// v3/index
 	registerListIndices,
 	registerSearchIndex,
+	// v3/index — flagship product wrappers
+	registerSearchTargetIntel,
+	registerSearchIPIntel,
+	registerSearchCanaries,
 	// v3/backups
 	registerListBackups,
 	registerGetBackup,
