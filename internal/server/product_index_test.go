@@ -152,7 +152,7 @@ func TestNewProductResponse_BoundsOversizedPagesAndNamesDroppedHosts(t *testing.
 
 	assert.Positive(t, got.Dropped, "a page this large must be trimmed")
 	assert.Equal(t, len(rows)-got.Returned, got.Dropped)
-	assert.NotEmpty(t, got.DroppedIPs, "dropped hosts are named so they can be fetched individually")
+	assert.NotEmpty(t, got.DroppedIDs, "dropped hosts are named so they can be fetched individually")
 	assert.Contains(t, strings.Join(got.Notes, " "), "dropped whole")
 
 	encoded, err := json.Marshal(got)

@@ -14,6 +14,7 @@ var tools = []func(*mcp.Server, client.Client){
 	registerSearchTargetIntel,
 	registerSearchIPIntel,
 	registerSearchCanaries,
+	registerSearchCuratedExploits,
 	// v3/backups
 	registerListBackups,
 	registerGetBackup,
@@ -58,9 +59,18 @@ var tools = []func(*mcp.Server, client.Client){
 //
 // The raw index names are deliberately absent: the product tools expose filters
 // search_index does not, so naming the indices here would advertise the worse path.
+//
+// The split between search_cve and search_curated_exploits is by the direction of the
+// question rather than by subject. Both concern exploit maturity and KEV status, but
+// search_cve reports them for a CVE the caller names while search_curated_exploits
+// selects CVEs by them. Describing that boundary as a topic — "use search_cve for
+// maturity" — sent every "which CVEs are weaponized" question to the one tool that
+// cannot filter on it.
 const serverInstructions = `Route by what the question is about.
 
-CVE metadata — severity, exploit availability and maturity, KEV status, advisories, threat actor, ransomware and botnet association: use search_cve. It aggregates these categories across many indices and is normally sufficient on its own. Do not call search_index to cross-check or enrich what it returns.
+What is known about a named CVE — severity, whether exploits exist and how mature they are, KEV status, advisories, threat actor, ransomware and botnet association: use search_cve. It aggregates these categories across many indices and is normally sufficient on its own. Do not call search_index to cross-check or enrich what it returns.
+
+Which CVEs have a given exploit property, rather than what is true of one CVE: use search_curated_exploits. search_cve reports maturity and KEV status for a CVE you name, but cannot select by them, so it cannot answer "which vulnerabilities have weaponized exploit code", "what has VulnCheck's own exploit developers reviewed", "what is in the VulnCheck KEV catalogue but not CISA's", or "which of those changed this week".
 
 Internet exposure and observed attack activity: search_cve does not cover these. Use the product tool that owns the data:
 - search_target_intel — internet-facing hosts confirmed to be running vulnerable software. Answers "which hosts are exposed to this CVE", and locates C2, scanners, proxies and honeypots by classification.
