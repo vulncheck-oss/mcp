@@ -80,6 +80,9 @@ func productLimit(requested, fallback int) int {
 }
 
 // rowCVE names a row by CVE ID, for indices keyed by vulnerability rather than host.
+//
+// Both fields are read because the exploit index puts the CVE string in id, while
+// other vulnerability-keyed indices carry it in cve.
 func rowCVE(raw json.RawMessage) string {
 	var r struct {
 		ID  string `json:"id"`

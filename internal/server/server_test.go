@@ -46,7 +46,7 @@ func TestNewServer_ToolsRegistered(t *testing.T) {
 // questions, and must name the indices that do.
 func TestServerInstructions_RoutesExposureQuestionsAwayFromSearchCVE(t *testing.T) {
 	t.Run("routes to the tools that own the data search_cve cannot reach", func(t *testing.T) {
-		for _, tool := range []string{"search_target_intel", "search_ip_intel", "search_canaries"} {
+		for _, tool := range []string{"search_target_intel", "search_ip_intel", "search_canaries", "search_curated_exploits"} {
 			assert.Contains(t, serverInstructions, tool,
 				"instructions must name %q, the only route to exposure or observed-attack data", tool)
 		}
@@ -72,6 +72,14 @@ func TestServerInstructions_RoutesExposureQuestionsAwayFromSearchCVE(t *testing.
 	t.Run("keeps the fan-out and pagination guardrails from #39", func(t *testing.T) {
 		assert.Contains(t, serverInstructions, "Do not paginate autonomously")
 		assert.Contains(t, serverInstructions, "Do not call search_index to cross-check or enrich")
+	})
+
+	// search_cve reports maturity and KEV status for a named CVE but cannot select by
+	// them. Describing that boundary as a topic rather than a direction sent every
+	// "which CVEs are weaponized" question to the one tool that cannot answer it.
+	t.Run("separates reporting a CVE's properties from selecting CVEs by them", func(t *testing.T) {
+		assert.Contains(t, serverInstructions, "cannot select by them")
+		assert.Contains(t, serverInstructions, "weaponized exploit code")
 	})
 
 	t.Run("says a product result is a sample of a population", func(t *testing.T) {
