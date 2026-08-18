@@ -378,3 +378,43 @@ func TestSearchTargetIntelHandler_SerializesTheProductEnvelope(t *testing.T) {
 	assert.JSONEq(t, `{"ip":"203.0.113.42","port":443}`, string(payload.Data[0]))
 	assert.NotEmpty(t, payload.Notes, "one row out of 559290 must carry the sampling caveat")
 }
+
+// An empty page with a non-zero total is not an absence of data. The API applies
+// its filter to a page after slicing it, so a small limit can legitimately return
+// nothing while records match. Reporting that as a sample would tell the caller it
+// had seen representative rows when it had seen none.
+func TestNewProductResponse_DistinguishesAnEmptyPageFromNoData(t *testing.T) {
+	t.Run("empty page with matches says so, and does not claim a sample", func(t *testing.T) {
+		got := newProductResponse("target-intel", &client.IndexQueryResult{
+			Data:  []json.RawMessage{},
+			Total: 403,
+		})
+
+		assert.Zero(t, got.Returned)
+		notes := strings.Join(got.Notes, " ")
+		assert.Contains(t, notes, "retry with a larger limit",
+			"an empty page with matches must tell the caller how to recover")
+		assert.NotContains(t, notes, "these rows are a sample",
+			"there are no rows, so calling them a sample is misleading")
+	})
+
+	t.Run("genuinely empty result stays quiet", func(t *testing.T) {
+		got := newProductResponse("target-intel", &client.IndexQueryResult{
+			Data:  []json.RawMessage{},
+			Total: 0,
+		})
+
+		assert.Zero(t, got.Returned)
+		assert.Empty(t, got.Notes, "no matches and no rows needs no explanation")
+	})
+
+	t.Run("partial page still reports as a sample", func(t *testing.T) {
+		got := newProductResponse("target-intel", &client.IndexQueryResult{
+			Data:  []json.RawMessage{json.RawMessage(`{"ip":"203.0.113.1"}`)},
+			Total: 403,
+		})
+
+		assert.Equal(t, 1, got.Returned)
+		assert.Contains(t, strings.Join(got.Notes, " "), "sample")
+	})
+}

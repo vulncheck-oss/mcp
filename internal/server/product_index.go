@@ -35,6 +35,10 @@ const (
 	productTruncatedNote = "rows were dropped whole to keep this response within a usable context " +
 		"budget, never abridged — narrow the query with more filters, or lower limit, to see a " +
 		"different slice"
+
+	emptyPageNote = "records match this query but none was returned on this page: the API applies the " +
+		"filter to a page after slicing it, so a small limit can yield nothing while total is " +
+		"non-zero. This is not an absence of data — retry with a larger limit"
 )
 
 // windowedIndex resolves a window token to a concrete index name.
@@ -115,7 +119,14 @@ func newProductResponse(index string, result *client.IndexQueryResult) productRe
 		response.DroppedIPs = bound.Names
 		response.Notes = append(response.Notes, productTruncatedNote)
 	}
-	if response.Total > response.Returned {
+	// An empty page with a non-zero total is not the same as no data, and must not be
+	// reported as a sample: the filter is applied to a page after it is sliced, so a
+	// small limit can legitimately yield nothing. Saying so is the difference between
+	// "nothing matches" and "ask again for more".
+	switch {
+	case response.Returned == 0 && response.Total > 0:
+		response.Notes = append(response.Notes, emptyPageNote)
+	case response.Total > response.Returned:
 		response.Notes = append(response.Notes, populationNote)
 	}
 	if response.Total > offsetCeiling {
