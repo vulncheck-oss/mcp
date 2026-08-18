@@ -30,7 +30,7 @@ Your MCP client lists the available arguments for each tool; the summaries below
 
 | Tool | Description |
 |------|-------------|
-| `search_docs` | Fetch the VulnCheck documentation index. Returns a list of all available documentation pages and their URLs. Use `get_doc` to retrieve the content of a specific page. |
+| `search_docs` | Search the VulnCheck documentation and return matching pages ranked by relevance, with titles, descriptions and URLs. Pass a URL to `get_doc` for the page itself. Searches every section except translations of the primary content; call without a query to list the sections. |
 | `get_doc` | Fetch the raw markdown content of a VulnCheck documentation page. Use `search_docs` first to discover available page URLs. |
 
 ## CVE Search
