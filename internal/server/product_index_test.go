@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -417,4 +418,27 @@ func TestNewProductResponse_DistinguishesAnEmptyPageFromNoData(t *testing.T) {
 		assert.Equal(t, 1, got.Returned)
 		assert.Contains(t, strings.Join(got.Notes, " "), "sample")
 	})
+}
+
+// The classification filter takes either a classification or a product name, each on
+// its own. A combined "type:product" value is accepted by the API but the suffix is
+// ignored, so it returns the whole classification while looking like a narrower query
+// — asking for one C2 framework and receiving every C2 host. The schema must not
+// suggest that form, because there is no error to reveal it.
+func TestSearchTargetIntelArgs_DoesNotSuggestCombinedClassifications(t *testing.T) {
+	field, ok := reflect.TypeFor[searchTargetIntelArgs]().FieldByName("Classifications")
+	require.True(t, ok)
+	schema := field.Tag.Get("jsonschema")
+
+	assert.Contains(t, schema, "the suffix is ignored",
+		"the schema has to warn that the combined form does not narrow")
+	assert.Contains(t, schema, "cobalt-strike",
+		"a product name on its own is a real filter and worth naming")
+
+	// The combined form may appear only as the thing being warned against, never as an
+	// example to follow.
+	if before, _, found := strings.Cut(schema, "c2:cobalt-strike"); found {
+		assert.Contains(t, before, "Do not",
+			"if the combined form is mentioned it must be as a warning")
+	}
 }
