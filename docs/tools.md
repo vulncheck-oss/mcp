@@ -5,7 +5,19 @@
 | Tool | Description |
 |------|-------------|
 | `list_indices` | List all VulnCheck indices. Call this first to discover which index names can be passed to `search_index`. Accepts an optional `search` parameter to filter by name or description. |
-| `search_index` | Query a VulnCheck index by name. Supports optional CVE filter and cursor-based pagination. |
+| `search_index` | Query a VulnCheck index by name. Supports identifier, threat-intelligence and date-range filters, sorting, and cursor-based pagination. For IP Intelligence, Target Intelligence and Canary Intelligence, prefer the dedicated product tools below. |
+
+## Products
+
+Tools for the flagship product indices. Each selects its own index, so no index name is needed, and each exposes the filters relevant to that product. Results are a **sample** of a matching population — `total` reports the size of the whole set — and responses are bounded by size rather than row count.
+
+Your MCP client lists the available arguments for each tool; the summaries below describe what each one answers.
+
+| Tool | Description |
+|------|-------------|
+| `search_target_intel` | Find internet-facing hosts confirmed to be running vulnerable software, mapped to CVEs by version-level fingerprinting. Answers "which hosts are exposed to this CVE", and locates infrastructure by classification. Filter by CVE, software identity, network, or location. |
+| `search_ip_intel` | Find attacker and target IP infrastructure over a rolling window — command-and-control servers, honeypots, and hosts potentially targeted by initial-access exploits — with geolocation and ASN enrichment. Choose the period with `window`. |
+| `search_canaries` | Find exploitation attempts observed against VulnCheck's globally deployed vulnerable canary hosts. Because the canary is genuinely vulnerable, a hit is direct evidence of in-the-wild attack rather than an inference. Choose the period with `window`. |
 
 ## Backups
 

@@ -34,6 +34,46 @@ type SearchIndexQuery struct {
 	IAVA               string
 	Sort               string
 	Order              string
+
+	// Index-specific filters. Indices accept different subsets of these, so only
+	// send the ones the target index supports.
+
+	// IP Intelligence and Target Intelligence
+	ASN         string
+	CIDR        string
+	Country     string
+	CountryCode string
+	Hostname    string
+
+	// IP Intelligence
+	ID   string
+	Kind string
+
+	// Canary Intelligence
+	SrcCountry string
+	DstCountry string
+	SrcIP      string
+	SrcASN     string
+
+	// Target Intelligence
+	Vendor          string
+	Product         string
+	Version         string
+	CPE             string
+	Protocol        string
+	Transport       string
+	Port            int
+	Domain          string
+	Classifications string
+	ContainsCVE     *bool
+
+	// Threat intelligence, valid on the vulnerability and exploit indices and on
+	// the ipintel family
+	ThreatActor string
+	MitreID     string
+	MispID      string
+	Ransomware  string
+	Botnet      string
 }
 
 type indexResponseMeta struct {
@@ -57,8 +97,55 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 	}
 
 	p := u.Query()
-	if q.CVE != "" {
-		p.Set("cve", q.CVE)
+	for key, value := range map[string]string{
+		"cve":                q.CVE,
+		"alias":              q.Alias,
+		"iava":               q.IAVA,
+		"lastModStartDate":   q.LastModStartDate,
+		"lastModEndDate":     q.LastModEndDate,
+		"pubStartDate":       q.PubStartDate,
+		"pubEndDate":         q.PubEndDate,
+		"updatedAtStartDate": q.UpdatedAtStartDate,
+		"updatedAtEndDate":   q.UpdatedAtEndDate,
+		"date":               q.Date,
+		"sort":               q.Sort,
+		"order":              q.Order,
+		"asn":                q.ASN,
+		"cidr":               q.CIDR,
+		"country":            q.Country,
+		"country_code":       q.CountryCode,
+		"hostname":           q.Hostname,
+		"id":                 q.ID,
+		"kind":               q.Kind,
+		"src_country":        q.SrcCountry,
+		"dst_country":        q.DstCountry,
+		"src_ip":             q.SrcIP,
+		"src_asn":            q.SrcASN,
+		"vendor":             q.Vendor,
+		"product":            q.Product,
+		"version":            q.Version,
+		"cpe":                q.CPE,
+		"protocol":           q.Protocol,
+		"transport":          q.Transport,
+		"domain":             q.Domain,
+		"classifications":    q.Classifications,
+		"threat_actor":       q.ThreatActor,
+		"mitre_id":           q.MitreID,
+		"misp_id":            q.MispID,
+		"ransomware":         q.Ransomware,
+		"botnet":             q.Botnet,
+	} {
+		if value != "" {
+			p.Set(key, value)
+		}
+	}
+	if q.Port > 0 {
+		p.Set("port", strconv.Itoa(q.Port))
+	}
+	// contains_cve=false is a meaningful filter (hosts with no associated CVE), so
+	// it is only omitted when the caller left it unset.
+	if q.ContainsCVE != nil {
+		p.Set("contains_cve", strconv.FormatBool(*q.ContainsCVE))
 	}
 	if q.Cursor != "" {
 		p.Set("cursor", q.Cursor)
@@ -67,39 +154,6 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 	}
 	if q.Limit > 0 {
 		p.Set("limit", strconv.Itoa(q.Limit))
-	}
-	if q.LastModStartDate != "" {
-		p.Set("lastModStartDate", q.LastModStartDate)
-	}
-	if q.LastModEndDate != "" {
-		p.Set("lastModEndDate", q.LastModEndDate)
-	}
-	if q.PubStartDate != "" {
-		p.Set("pubStartDate", q.PubStartDate)
-	}
-	if q.PubEndDate != "" {
-		p.Set("pubEndDate", q.PubEndDate)
-	}
-	if q.UpdatedAtStartDate != "" {
-		p.Set("updatedAtStartDate", q.UpdatedAtStartDate)
-	}
-	if q.UpdatedAtEndDate != "" {
-		p.Set("updatedAtEndDate", q.UpdatedAtEndDate)
-	}
-	if q.Date != "" {
-		p.Set("date", q.Date)
-	}
-	if q.Alias != "" {
-		p.Set("alias", q.Alias)
-	}
-	if q.IAVA != "" {
-		p.Set("iava", q.IAVA)
-	}
-	if q.Sort != "" {
-		p.Set("sort", q.Sort)
-	}
-	if q.Order != "" {
-		p.Set("order", q.Order)
 	}
 	u.RawQuery = p.Encode()
 

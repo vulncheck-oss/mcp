@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -155,4 +156,143 @@ func TestSearchIndex_NetworkError(t *testing.T) {
 	}
 	_, err := vc.SearchIndex(context.Background(), SearchIndexQuery{Index: "any", Limit: 1})
 	require.Error(t, err)
+}
+
+// TestSearchIndex_IndexSpecificParameterNames pins every index-specific filter to
+// the exact query-string key the API expects.
+//
+// A misspelled key does not surface as a build error or a failed request, so these
+// assertions are the only thing standing between a typo and a query that quietly
+// does not filter the way the caller asked.
+func TestSearchIndex_IndexSpecificParameterNames(t *testing.T) {
+	contains := true
+
+	var got url.Values
+	c := newAPITestClient(func(r *http.Request) (*http.Response, error) {
+		got = r.URL.Query()
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{"total_documents": 0},
+			"data":  []any{},
+		}), nil
+	})
+
+	_, err := c.SearchIndex(context.Background(), SearchIndexQuery{
+		Index:           "target-intel",
+		ASN:             "AS15169",
+		CIDR:            "203.0.113.0/24",
+		Country:         "United States",
+		CountryCode:     "US",
+		Hostname:        "vpn.example.com",
+		ID:              "honeypot",
+		Kind:            "some-kind",
+		SrcCountry:      "IR",
+		DstCountry:      "US",
+		SrcIP:           "198.51.100.7",
+		SrcASN:          "AS12345",
+		Vendor:          "ivanti",
+		Product:         "connect secure",
+		Version:         "22.3.0",
+		CPE:             "cpe:2.3:o:qnap:qts:-:*:*:*:*:*:*:*",
+		Protocol:        "http",
+		Transport:       "tcp",
+		Port:            443,
+		Domain:          "example.com",
+		Classifications: "c2:cobalt-strike",
+		ContainsCVE:     &contains,
+		ThreatActor:     "UNC2630",
+		MitreID:         "G0013",
+		MispID:          "3570552c",
+		Ransomware:      "Cactus",
+		Botnet:          "Fbot",
+	})
+	require.NoError(t, err)
+
+	for key, want := range map[string]string{
+		"asn":             "AS15169",
+		"cidr":            "203.0.113.0/24",
+		"country":         "United States",
+		"country_code":    "US",
+		"hostname":        "vpn.example.com",
+		"id":              "honeypot",
+		"kind":            "some-kind",
+		"src_country":     "IR",
+		"dst_country":     "US",
+		"src_ip":          "198.51.100.7",
+		"src_asn":         "AS12345",
+		"vendor":          "ivanti",
+		"product":         "connect secure",
+		"version":         "22.3.0",
+		"cpe":             "cpe:2.3:o:qnap:qts:-:*:*:*:*:*:*:*",
+		"protocol":        "http",
+		"transport":       "tcp",
+		"port":            "443",
+		"domain":          "example.com",
+		"classifications": "c2:cobalt-strike",
+		"contains_cve":    "true",
+		"threat_actor":    "UNC2630",
+		"mitre_id":        "G0013",
+		"misp_id":         "3570552c",
+		"ransomware":      "Cactus",
+		"botnet":          "Fbot",
+	} {
+		assert.Equal(t, want, got.Get(key), "query parameter %q", key)
+	}
+}
+
+// contains_cve=false selects hosts with no associated CVE, so it has to reach the
+// API. Only an unset filter may be omitted.
+func TestSearchIndex_ContainsCVETriState(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   *bool
+		wantSet bool
+		want    string
+	}{
+		{name: "unset is omitted", value: nil, wantSet: false},
+		{name: "false is sent", value: new(bool), wantSet: true, want: "false"},
+		{name: "true is sent", value: func() *bool { b := true; return &b }(), wantSet: true, want: "true"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got url.Values
+			c := newAPITestClient(func(r *http.Request) (*http.Response, error) {
+				got = r.URL.Query()
+				return jsonResp(http.StatusOK, map[string]any{
+					"_meta": map[string]any{"total_documents": 0},
+					"data":  []any{},
+				}), nil
+			})
+
+			_, err := c.SearchIndex(context.Background(), SearchIndexQuery{
+				Index:       "target-intel",
+				ContainsCVE: tt.value,
+			})
+			require.NoError(t, err)
+
+			_, present := got["contains_cve"]
+			assert.Equal(t, tt.wantSet, present)
+			if tt.wantSet {
+				assert.Equal(t, tt.want, got.Get("contains_cve"))
+			}
+		})
+	}
+}
+
+// A zero port is absent rather than port=0, which would be a real filter upstream.
+func TestSearchIndex_OmitsZeroPort(t *testing.T) {
+	var got url.Values
+	c := newAPITestClient(func(r *http.Request) (*http.Response, error) {
+		got = r.URL.Query()
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{"total_documents": 0},
+			"data":  []any{},
+		}), nil
+	})
+
+	_, err := c.SearchIndex(context.Background(), SearchIndexQuery{Index: "target-intel", Port: 0})
+	require.NoError(t, err)
+
+	_, present := got["port"]
+	assert.False(t, present)
 }
