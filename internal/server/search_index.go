@@ -34,6 +34,19 @@ type searchIndexArgs struct {
 	Cursor             string `json:"cursor,omitempty"                jsonschema:"Cursor token from a previous next_cursor to fetch the next page"`
 }
 
+// searchIndexFilters are the upstream query keys this tool can send. describe_index
+// intersects an index's advertised filters with this set, so a caller can see which of
+// them are reachable here rather than assuming all of them are.
+var searchIndexFilters = map[string]bool{
+	"cve": true, "alias": true, "iava": true, "jvndb": true,
+	"threat_actor": true, "mitre_id": true, "misp_id": true,
+	"ransomware": true, "botnet": true,
+	"lastModStartDate": true, "lastModEndDate": true,
+	"pubStartDate": true, "pubEndDate": true,
+	"updatedAtStartDate": true, "updatedAtEndDate": true,
+	"date": true, "sort": true, "order": true,
+}
+
 var SearchIndexTool = &mcp.Tool{
 	Name:  "search_index",
 	Title: "Search Index",

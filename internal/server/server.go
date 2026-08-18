@@ -8,6 +8,7 @@ import (
 var tools = []func(*mcp.Server, client.Client){
 	// v3/index
 	registerListIndices,
+	registerDescribeIndex,
 	registerSearchIndex,
 	// v3/index — flagship product wrappers
 	registerSearchTargetIntel,
