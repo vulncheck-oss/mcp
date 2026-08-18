@@ -14,6 +14,7 @@ import (
 // sent there rather than left to compose the generic tool.
 var dedicatedTools = map[string]string{
 	targetIntelIndex: "search_target_intel",
+	exploitsIndex:    "search_curated_exploits",
 	canaryPrefix:     "search_canaries",
 }
 

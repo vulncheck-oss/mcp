@@ -78,6 +78,16 @@ type SearchIndexQuery struct {
 	// JVNDB is the Japanese vulnerability database identifier, e.g.
 	// "JVNDB-2025-007355".
 	JVNDB string
+
+	// Exploit curation filters. Validated upstream as closed vocabularies, so an
+	// unrecognised value is rejected rather than ignored.
+	MaxExploitMaturity string
+	ValidationLevel    string
+
+	// InKEV and InVCKEV are tri-state: false selects records explicitly marked false,
+	// which is not necessarily the complement of true, so an unset filter is omitted.
+	InKEV   *bool
+	InVCKEV *bool
 }
 
 type indexResponseMeta struct {
@@ -102,43 +112,45 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 
 	p := u.Query()
 	for key, value := range map[string]string{
-		"cve":                q.CVE,
-		"alias":              q.Alias,
-		"iava":               q.IAVA,
-		"lastModStartDate":   q.LastModStartDate,
-		"lastModEndDate":     q.LastModEndDate,
-		"pubStartDate":       q.PubStartDate,
-		"pubEndDate":         q.PubEndDate,
-		"updatedAtStartDate": q.UpdatedAtStartDate,
-		"updatedAtEndDate":   q.UpdatedAtEndDate,
-		"date":               q.Date,
-		"sort":               q.Sort,
-		"order":              q.Order,
-		"asn":                q.ASN,
-		"cidr":               q.CIDR,
-		"country":            q.Country,
-		"country_code":       q.CountryCode,
-		"hostname":           q.Hostname,
-		"id":                 q.ID,
-		"kind":               q.Kind,
-		"src_country":        q.SrcCountry,
-		"dst_country":        q.DstCountry,
-		"src_ip":             q.SrcIP,
-		"src_asn":            q.SrcASN,
-		"vendor":             q.Vendor,
-		"product":            q.Product,
-		"version":            q.Version,
-		"cpe":                q.CPE,
-		"protocol":           q.Protocol,
-		"transport":          q.Transport,
-		"domain":             q.Domain,
-		"classifications":    q.Classifications,
-		"threat_actor":       q.ThreatActor,
-		"mitre_id":           q.MitreID,
-		"misp_id":            q.MispID,
-		"ransomware":         q.Ransomware,
-		"botnet":             q.Botnet,
-		"jvndb":              q.JVNDB,
+		"cve":                  q.CVE,
+		"alias":                q.Alias,
+		"iava":                 q.IAVA,
+		"lastModStartDate":     q.LastModStartDate,
+		"lastModEndDate":       q.LastModEndDate,
+		"pubStartDate":         q.PubStartDate,
+		"pubEndDate":           q.PubEndDate,
+		"updatedAtStartDate":   q.UpdatedAtStartDate,
+		"updatedAtEndDate":     q.UpdatedAtEndDate,
+		"date":                 q.Date,
+		"sort":                 q.Sort,
+		"order":                q.Order,
+		"asn":                  q.ASN,
+		"cidr":                 q.CIDR,
+		"country":              q.Country,
+		"country_code":         q.CountryCode,
+		"hostname":             q.Hostname,
+		"id":                   q.ID,
+		"kind":                 q.Kind,
+		"src_country":          q.SrcCountry,
+		"dst_country":          q.DstCountry,
+		"src_ip":               q.SrcIP,
+		"src_asn":              q.SrcASN,
+		"vendor":               q.Vendor,
+		"product":              q.Product,
+		"version":              q.Version,
+		"cpe":                  q.CPE,
+		"protocol":             q.Protocol,
+		"transport":            q.Transport,
+		"domain":               q.Domain,
+		"classifications":      q.Classifications,
+		"threat_actor":         q.ThreatActor,
+		"mitre_id":             q.MitreID,
+		"misp_id":              q.MispID,
+		"ransomware":           q.Ransomware,
+		"botnet":               q.Botnet,
+		"jvndb":                q.JVNDB,
+		"max_exploit_maturity": q.MaxExploitMaturity,
+		"validation_level":     q.ValidationLevel,
 	} {
 		if value != "" {
 			p.Set(key, value)
@@ -151,6 +163,12 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 	// it is only omitted when the caller left it unset.
 	if q.ContainsCVE != nil {
 		p.Set("contains_cve", strconv.FormatBool(*q.ContainsCVE))
+	}
+	if q.InKEV != nil {
+		p.Set("in_kev", strconv.FormatBool(*q.InKEV))
+	}
+	if q.InVCKEV != nil {
+		p.Set("in_vckev", strconv.FormatBool(*q.InVCKEV))
 	}
 	if q.Cursor != "" {
 		p.Set("cursor", q.Cursor)

@@ -316,3 +316,50 @@ func TestSearchIndex_SendsJVNDB(t *testing.T) {
 
 	assert.Equal(t, "JVNDB-2025-007355", got.Get("jvndb"))
 }
+
+// The curation filters are validated upstream as closed vocabularies, so they only
+// have to reach the API under the right keys. Both KEV flags are tri-state.
+func TestSearchIndex_CurationFilters(t *testing.T) {
+	kev, vckev := true, false
+	var got url.Values
+	c := newAPITestClient(func(r *http.Request) (*http.Response, error) {
+		got = r.URL.Query()
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{"total_documents": 1},
+			"data":  []any{},
+		}), nil
+	})
+
+	_, err := c.SearchIndex(context.Background(), SearchIndexQuery{
+		Index:              "exploits",
+		MaxExploitMaturity: "weaponized",
+		ValidationLevel:    "vulncheck-authored,third-party-validated",
+		InKEV:              &kev,
+		InVCKEV:            &vckev,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "weaponized", got.Get("max_exploit_maturity"))
+	assert.Equal(t, "vulncheck-authored,third-party-validated", got.Get("validation_level"))
+	assert.Equal(t, "true", got.Get("in_kev"))
+	assert.Equal(t, "false", got.Get("in_vckev"), "false is a filter, not an absence")
+}
+
+func TestSearchIndex_OmitsUnsetKEVFlags(t *testing.T) {
+	var got url.Values
+	c := newAPITestClient(func(r *http.Request) (*http.Response, error) {
+		got = r.URL.Query()
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{"total_documents": 1},
+			"data":  []any{},
+		}), nil
+	})
+
+	_, err := c.SearchIndex(context.Background(), SearchIndexQuery{Index: "exploits"})
+	require.NoError(t, err)
+
+	for _, key := range []string{"in_kev", "in_vckev"} {
+		_, present := got[key]
+		assert.False(t, present, "%s must be absent when unset", key)
+	}
+}
