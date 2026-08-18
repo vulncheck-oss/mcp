@@ -21,6 +21,12 @@ type searchIndexArgs struct {
 	UpdatedAtStartDate string `json:"updated_at_start_date,omitempty" jsonschema:"Filter by data source update date range start (YYYY-MM-DD)"`
 	UpdatedAtEndDate   string `json:"updated_at_end_date,omitempty"   jsonschema:"Filter by data source update date range end (YYYY-MM-DD)"`
 	Date               string `json:"date,omitempty"                  jsonschema:"Filter by exact date (YYYY-MM-DD) — equivalent to setting both start and end to the same date"`
+	ThreatActor        string `json:"threat_actor,omitempty"          jsonschema:"Filter by threat actor name, e.g. 'UNC2630'. Valid on the threat-actors, botnets, ransomware, exploits and vulnerability indices"`
+	MitreID            string `json:"mitre_id,omitempty"              jsonschema:"Filter by a threat actor's MITRE ATT&CK group ID, e.g. 'G0013'"`
+	MispID             string `json:"misp_id,omitempty"               jsonschema:"Filter by a threat actor's MISP ID"`
+	Ransomware         string `json:"ransomware,omitempty"            jsonschema:"Filter by ransomware group name, e.g. 'Cactus'"`
+	Botnet             string `json:"botnet,omitempty"                jsonschema:"Filter by botnet name, e.g. 'Fbot'"`
+	JVNDB              string `json:"jvndb,omitempty"                 jsonschema:"Filter by Japanese vulnerability database ID, e.g. 'JVNDB-2025-007355'"`
 	Sort               string `json:"sort,omitempty"                  jsonschema:"Sort results by '_timestamp' or 'date_added'"`
 	Order              string `json:"order,omitempty"                 jsonschema:"Sort direction: 'asc' or 'desc'"`
 	Limit              int    `json:"limit,omitempty"                 jsonschema:"Number of results per page (default 1)"`
@@ -29,9 +35,11 @@ type searchIndexArgs struct {
 }
 
 var SearchIndexTool = &mcp.Tool{
-	Name:        "search_index",
-	Title:       "Search Index",
-	Description: "Query a VulnCheck index by name (required). Use list_indices to discover available index names. Filter by CVE, alias, IAVA, date ranges, and more. Supports sorting and cursor-based pagination.",
+	Name:  "search_index",
+	Title: "Search Index",
+	Description: "Query a VulnCheck index by name (required). Use list_indices to discover available index names. " +
+		"Filter by CVE, alias, IAVA, JVNDB ID, threat actor, MITRE ATT&CK group, MISP ID, ransomware group, botnet, and date ranges. Supports sorting and cursor-based pagination. " +
+		"For IP Intelligence, Target Intelligence and Canary Intelligence use search_ip_intel, search_target_intel and search_canaries instead — they expose host and network filters this tool does not.",
 	Annotations: &mcp.ToolAnnotations{
 		ReadOnlyHint: true,
 	},
@@ -69,6 +77,12 @@ func MakeSearchIndexHandler(vc client.Client) mcp.ToolHandlerFor[searchIndexArgs
 			Date:               args.Date,
 			Alias:              args.Alias,
 			IAVA:               args.IAVA,
+			ThreatActor:        args.ThreatActor,
+			MitreID:            args.MitreID,
+			MispID:             args.MispID,
+			Ransomware:         args.Ransomware,
+			Botnet:             args.Botnet,
+			JVNDB:              args.JVNDB,
 			Sort:               args.Sort,
 			Order:              args.Order,
 		})
