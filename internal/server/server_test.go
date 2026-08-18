@@ -45,10 +45,19 @@ func TestNewServer_ToolsRegistered(t *testing.T) {
 // the instructions must not claim it answers exposure or observed-attack
 // questions, and must name the indices that do.
 func TestServerInstructions_RoutesExposureQuestionsAwayFromSearchCVE(t *testing.T) {
-	t.Run("names the indices search_cve cannot reach", func(t *testing.T) {
-		for _, index := range []string{"target-intel", "ipintel-3d", "vulncheck-canaries"} {
-			assert.Contains(t, serverInstructions, index,
-				"instructions must name %q, the only source for exposure or observed-attack questions", index)
+	t.Run("routes to the tools that own the data search_cve cannot reach", func(t *testing.T) {
+		for _, tool := range []string{"search_target_intel", "search_ip_intel", "search_canaries"} {
+			assert.Contains(t, serverInstructions, tool,
+				"instructions must name %q, the only route to exposure or observed-attack data", tool)
+		}
+	})
+
+	t.Run("does not advertise the raw indices behind those tools", func(t *testing.T) {
+		// The product tools expose filters search_index cannot, so naming the raw
+		// index would point callers at the worse path.
+		for _, index := range []string{"target-intel", "ipintel-3d", "vulncheck-canaries-3d"} {
+			assert.NotContains(t, serverInstructions, index,
+				"instructions should route via the product tool, not the raw index %q", index)
 		}
 	})
 
@@ -65,10 +74,11 @@ func TestServerInstructions_RoutesExposureQuestionsAwayFromSearchCVE(t *testing.
 		assert.Contains(t, serverInstructions, "Do not call search_index to cross-check or enrich")
 	})
 
-	t.Run("warns that the default limit is not a population answer", func(t *testing.T) {
-		// search_index defaults limit to 1, which is misleading rather than merely
-		// small when the question is "which hosts are exposed".
-		assert.Contains(t, serverInstructions, "Pass an explicit limit")
-		assert.Contains(t, serverInstructions, "population size from the response total")
+	t.Run("says a product result is a sample of a population", func(t *testing.T) {
+		// These indices are far larger than any single response, so a result is
+		// never the complete set. The advice to pass an explicit limit is gone because
+		// the product tools default to sensible page sizes instead of search_index's 1.
+		assert.Contains(t, serverInstructions, "return a sample")
+		assert.Contains(t, serverInstructions, "report total rather than counting the rows returned")
 	})
 }
