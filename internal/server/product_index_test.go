@@ -188,6 +188,8 @@ func TestSearchTargetIntelHandler_MapsFiltersOntoUpstreamParameters(t *testing.T
 		ASN:             "AS64500",
 		Country:         "United States",
 		CountryCode:     "US",
+		Protocol:        "http",
+		Transport:       "tcp",
 		Port:            443,
 		Classifications: "c2:cobalt-strike",
 		ContainsCVE:     &yes,
@@ -207,6 +209,8 @@ func TestSearchTargetIntelHandler_MapsFiltersOntoUpstreamParameters(t *testing.T
 	assert.Equal(t, "AS64500", got.ASN)
 	assert.Equal(t, "United States", got.Country)
 	assert.Equal(t, "US", got.CountryCode)
+	assert.Equal(t, "http", got.Protocol)
+	assert.Equal(t, "tcp", got.Transport)
 	assert.Equal(t, 443, got.Port)
 	assert.Equal(t, "c2:cobalt-strike", got.Classifications)
 	require.NotNil(t, got.ContainsCVE)

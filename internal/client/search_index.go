@@ -61,6 +61,7 @@ type SearchIndexQuery struct {
 	Version         string
 	CPE             string
 	Protocol        string
+	Transport       string
 	Port            int
 	Domain          string
 	Classifications string
@@ -125,6 +126,7 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 		"version":            q.Version,
 		"cpe":                q.CPE,
 		"protocol":           q.Protocol,
+		"transport":          q.Transport,
 		"domain":             q.Domain,
 		"classifications":    q.Classifications,
 		"threat_actor":       q.ThreatActor,
