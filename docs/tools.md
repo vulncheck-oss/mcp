@@ -4,7 +4,8 @@
 
 | Tool | Description |
 |------|-------------|
-| `list_indices` | List all VulnCheck indices. Call this first to discover which index names can be passed to `search_index`. Accepts an optional `search` parameter to filter by name or description. |
+| `list_indices` | List VulnCheck index names. Returns names only unless a `search` narrows the set, since the full catalogue is large; descriptions can be requested explicitly with `include_description`. |
+| `describe_index` | Report which filters an index accepts, how large it is, and which tool to query it with. Call before `search_index` against an unfamiliar index — indices accept different filters, and one an index does not support has no effect rather than raising an error. |
 | `search_index` | Query a VulnCheck index by name. Supports identifier, threat-intelligence and date-range filters, sorting, and cursor-based pagination. For IP Intelligence, Target Intelligence and Canary Intelligence, prefer the dedicated product tools below. |
 
 ## Products
@@ -30,7 +31,7 @@ Your MCP client lists the available arguments for each tool; the summaries below
 
 | Tool | Description |
 |------|-------------|
-| `search_docs` | Fetch the VulnCheck documentation index. Returns a list of all available documentation pages and their URLs. Use `get_doc` to retrieve the content of a specific page. |
+| `search_docs` | Search the VulnCheck documentation and return matching pages ranked by relevance, with titles, descriptions and URLs. Pass a URL to `get_doc` for the page itself. Searches every section except translations of the primary content; call without a query to list the sections. |
 | `get_doc` | Fetch the raw markdown content of a VulnCheck documentation page. Use `search_docs` first to discover available page URLs. |
 
 ## CVE Search

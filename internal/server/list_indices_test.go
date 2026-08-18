@@ -112,3 +112,74 @@ func TestMakeListIndicesHandler(t *testing.T) {
 		})
 	}
 }
+
+// The full catalogue is large and descriptions are the bulk of it, so a bare call
+// returns names only. An agent is told to call this first, so its default cost
+// matters more than its completeness.
+func TestListIndices_OmitsDescriptionsByDefault(t *testing.T) {
+	vc := &mockClient{
+		listIndicesFn: func(_ context.Context) ([]client.Entry, error) {
+			return []client.Entry{
+				{Name: "exploits", Description: "a long description"},
+				{Name: "vulncheck-nvd2", Description: "another long description"},
+			}, nil
+		},
+	}
+
+	res, _, err := MakeListIndicesHandler(vc)(context.Background(), nil, listIndicesArgs{})
+	require.NoError(t, err)
+
+	var got listEntriesResult
+	require.NoError(t, json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &got))
+	require.Len(t, got.Data, 2)
+	for _, e := range got.Data {
+		assert.NotEmpty(t, e.Name, "names are the point of the call")
+		assert.Empty(t, e.Description)
+	}
+}
+
+// A search narrows the set enough that descriptions are worth having, and asking for
+// them separately would mean two calls to answer one question.
+func TestListIndices_IncludesDescriptionsWhenSearching(t *testing.T) {
+	vc := &mockClient{
+		listIndicesFn: func(_ context.Context) ([]client.Entry, error) {
+			return []client.Entry{
+				{Name: "exploits", Description: "exploit intelligence"},
+				{Name: "vulncheck-nvd2", Description: "vulnerability records"},
+			}, nil
+		},
+	}
+
+	res, _, err := MakeListIndicesHandler(vc)(context.Background(), nil, listIndicesArgs{Search: "exploit"})
+	require.NoError(t, err)
+
+	var got listEntriesResult
+	require.NoError(t, json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &got))
+	require.Len(t, got.Data, 1)
+	assert.Equal(t, "exploit intelligence", got.Data[0].Description)
+}
+
+func TestListIndices_DescriptionOverrides(t *testing.T) {
+	entries := []client.Entry{{Name: "exploits", Description: "exploit intelligence"}}
+	vc := &mockClient{
+		listIndicesFn: func(_ context.Context) ([]client.Entry, error) { return entries, nil },
+	}
+	on, off := true, false
+
+	t.Run("forced on without a search", func(t *testing.T) {
+		res, _, err := MakeListIndicesHandler(vc)(context.Background(), nil, listIndicesArgs{IncludeDescription: &on})
+		require.NoError(t, err)
+		var got listEntriesResult
+		require.NoError(t, json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &got))
+		assert.Equal(t, "exploit intelligence", got.Data[0].Description)
+	})
+
+	t.Run("forced off despite a search", func(t *testing.T) {
+		res, _, err := MakeListIndicesHandler(vc)(context.Background(), nil,
+			listIndicesArgs{Search: "exploit", IncludeDescription: &off})
+		require.NoError(t, err)
+		var got listEntriesResult
+		require.NoError(t, json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &got))
+		assert.Empty(t, got.Data[0].Description)
+	})
+}

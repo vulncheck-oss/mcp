@@ -12,6 +12,7 @@ type mockClient struct {
 	listBackupsFn         func(ctx context.Context) ([]client.Entry, error)
 	getBackupFn           func(ctx context.Context, index string) (*client.GetBackupResult, error)
 	searchIndexFn         func(ctx context.Context, q client.SearchIndexQuery) (*client.IndexQueryResult, error)
+	describeIndexFn       func(ctx context.Context, index string) (*client.IndexDescription, error)
 	getCPECVEsFn          func(ctx context.Context, cpe string, vulnerableOnly bool) (*client.CPECVEsResult, error)
 	searchCPEFn           func(ctx context.Context, q client.SearchCPEQuery) (*client.SearchCPEResult, error)
 	searchPURLsFn         func(ctx context.Context, purls []string) (*client.SearchPURLsResult, error)
@@ -42,6 +43,10 @@ func (m *mockClient) GetBackup(ctx context.Context, index string) (*client.GetBa
 
 func (m *mockClient) SearchIndex(ctx context.Context, q client.SearchIndexQuery) (*client.IndexQueryResult, error) {
 	return m.searchIndexFn(ctx, q)
+}
+
+func (m *mockClient) DescribeIndex(ctx context.Context, index string) (*client.IndexDescription, error) {
+	return m.describeIndexFn(ctx, index)
 }
 
 func (m *mockClient) GetCPECVEs(ctx context.Context, cpe string, vulnerableOnly bool) (*client.CPECVEsResult, error) {

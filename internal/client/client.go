@@ -16,6 +16,7 @@ type Client interface {
 	ListBackups(ctx context.Context) ([]Entry, error)
 	ListC2Hostnames(ctx context.Context) (string, error)
 	SearchIndex(ctx context.Context, q SearchIndexQuery) (*IndexQueryResult, error)
+	DescribeIndex(ctx context.Context, index string) (*IndexDescription, error)
 	GetBackup(ctx context.Context, index string) (*GetBackupResult, error)
 	GetCPECVEs(ctx context.Context, cpe string, vulnerableOnly bool) (*CPECVEsResult, error)
 	SearchCPE(ctx context.Context, q SearchCPEQuery) (*SearchCPEResult, error)
