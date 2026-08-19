@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+FROM golang:1.27rc3-alpine@sha256:c5aca77a4d16cb6688dbf3ccade67eff6f05ee208bc854d060e6947f5c27e23c AS builder
 ARG VERSION=dev
 ENV GOTOOLCHAIN=local CGO_ENABLED=0
 WORKDIR /src
