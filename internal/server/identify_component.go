@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -35,13 +34,6 @@ func MakeIdentifyComponentHandler(vc client.Client) mcp.ToolHandlerFor[identifyC
 			return nil, nil, fmt.Errorf("identifying component %q %q: %w", args.Vendor, args.Product, err)
 		}
 
-		out, err := json.Marshal(results)
-		if err != nil {
-			return nil, nil, fmt.Errorf("serializing results: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
-		}, nil, nil
+		return capResult(results)
 	}
 }

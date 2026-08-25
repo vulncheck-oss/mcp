@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -138,38 +137,6 @@ func TestNewProductResponse_NoNotesWhenEverythingWasReturned(t *testing.T) {
 	})
 
 	assert.Empty(t, got.Notes, "a complete answer needs no caveats")
-	assert.Zero(t, got.Dropped)
-}
-
-// A full page of host records can exceed the byte budget. Dropped rows must be
-// counted and named by IP so the caller can fetch them individually.
-func TestNewProductResponse_BoundsOversizedPagesAndNamesDroppedHosts(t *testing.T) {
-	rows := make([]json.RawMessage, 60)
-	for i := range rows {
-		rows[i] = json.RawMessage(fmt.Sprintf(`{"ip":"203.0.113.%d","pad":%q}`, i, strings.Repeat("x", 5_000)))
-	}
-
-	got := newProductResponse("target-intel", &client.IndexQueryResult{Data: rows, Total: 60})
-
-	assert.Positive(t, got.Dropped, "a page this large must be trimmed")
-	assert.Equal(t, len(rows)-got.Returned, got.Dropped)
-	assert.NotEmpty(t, got.DroppedIDs, "dropped hosts are named so they can be fetched individually")
-	assert.Contains(t, strings.Join(got.Notes, " "), "dropped whole")
-
-	encoded, err := json.Marshal(got)
-	require.NoError(t, err)
-	assert.LessOrEqual(t, len(encoded), maxResponseBytes+len(productTruncatedNote)+2048)
-
-	for _, raw := range got.Data {
-		assert.True(t, json.Valid(raw), "kept rows are passed through verbatim")
-	}
-}
-
-func TestRowAddress(t *testing.T) {
-	assert.Equal(t, "203.0.113.1", rowAddress(json.RawMessage(`{"ip":"203.0.113.1"}`)))
-	assert.Equal(t, "198.51.100.7", rowAddress(json.RawMessage(`{"src_ip":"198.51.100.7"}`)), "canary events key on src_ip")
-	assert.Empty(t, rowAddress(json.RawMessage(`{"other":"x"}`)))
-	assert.Empty(t, rowAddress(json.RawMessage(`not json`)))
 }
 
 func TestSearchTargetIntelHandler_MapsFiltersOntoUpstreamParameters(t *testing.T) {

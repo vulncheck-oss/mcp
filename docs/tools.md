@@ -1,16 +1,49 @@
 # Available Tools
 
+## Response size
+
+Every tool that returns API records keeps its response within a byte budget — 30,000 bytes
+by default, overridable at startup with `VULNCHECK_MCP_MAX_RESPONSE_BYTES`. Record sizes
+vary enormously between indices, and `limit` bounds the number of records rather than their
+size: one enriched vulnerability record can reach 876 KB on its own, which no row count can
+bound.
+
+A response within budget is returned exactly as the API produced it. Over budget, arrays are
+shortened — every array in the response, at any depth, to the same length — and if that is
+not enough, records are dropped from the end. Nothing else is altered: no field is added or
+removed, and a record that is returned is returned whole.
+
+When a response is shortened the tool attaches a report as a **second part of the result**,
+so the record itself gains no fields. It reports:
+
+| Field | Meaning |
+|---|---|
+| `note` | **first field** — what was done and what not to trust; read this before the records |
+| `capped` | each shortened array, by JSON Pointer, and its **true length** before shortening |
+| `array_limit` | the length arrays were shortened to |
+| `rows_returned` | how many records were returned, when records were dropped |
+| `removed_ids` | identifiers of records that did not fit, so they can be fetched individually |
+| `outline` | for a response that cannot be shortened at all, where its weight actually sits |
+
+A shortened array is not a short array, and **the record itself carries no sign that it was
+shortened** — that would mean adding a field to it. If `capped` reports `references` had
+5,376 entries, three entries in the response does not mean there are three. This is a
+**successful result**, not an error.
+
+Records dropped for size are not on the following page — the cursor advances past the whole
+page — so use `removed_ids` to fetch them, or narrow the query.
+
 ## Indices
 
 | Tool | Description |
 |------|-------------|
 | `list_indices` | List VulnCheck index names. Returns names only unless a `search` narrows the set, since the full catalogue is large; descriptions can be requested explicitly with `include_description`. |
 | `describe_index` | Report which filters an index accepts, how large it is, and which tool to query it with. Call before `search_index` against an unfamiliar index — indices accept different filters, and one an index does not support has no effect rather than raising an error. |
-| `search_index` | Query a VulnCheck index by name. Supports identifier, threat-intelligence and date-range filters, sorting, and cursor-based pagination. For IP Intelligence, Target Intelligence and Canary Intelligence, prefer the dedicated product tools below. |
+| `search_index` | Query a VulnCheck index by name. Supports identifier, threat-intelligence and date-range filters, sorting, and cursor-based pagination (`limit` defaults to 1, maximum 200). For IP Intelligence, Target Intelligence and Canary Intelligence, prefer the dedicated product tools below. |
 
 ## Products
 
-Tools for the flagship product indices. Each selects its own index, so no index name is needed, and each exposes the filters relevant to that product. Results are a **sample** of a matching population — `total` reports the size of the whole set — and responses are bounded by size rather than row count.
+Tools for the flagship product indices. Each selects its own index, so no index name is needed, and each exposes the filters relevant to that product. Results are a **sample** of a matching population — `total` reports the size of the whole set — and responses are bounded by size rather than row count, as described under [Response size](#response-size).
 
 Your MCP client lists the available arguments for each tool; the summaries below describe what each one answers.
 

@@ -81,7 +81,13 @@ These three describe populations of hosts and events rather than one record per 
 
 Otherwise call search_index only when the user explicitly asks for a specific named index's raw record, e.g. "show me the NVD2 record".
 
-Do not paginate autonomously. When the user asks for more results or the next page, use the cursor.`
+Do not paginate autonomously. When the user asks for more results or the next page, use the cursor.
+
+Responses are bounded. A tool that returns records keeps its response within a byte budget, and when it has to shorten one it says so in a second part of the result alongside the records. That part reports which arrays were shortened and their true lengths, how many records were returned out of how many matched, and the identifiers of records that did not fit.
+
+Read it. A shortened array is not a short array: if it reports references had 2457 entries, do not answer that there are five. A shortened response is a successful result, not an error — the records in it are complete and unaltered, only fewer or with shorter arrays.
+
+To recover what was left out: fetch the named records individually by their identifier, narrow the query, or for a single oversized record use the API or CLI, which are not bounded this way.`
 
 func New(vc client.Client, version string, cache *mcp.SchemaCache) *mcp.Server {
 	srv := mcp.NewServer(

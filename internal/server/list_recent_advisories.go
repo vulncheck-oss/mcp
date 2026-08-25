@@ -239,14 +239,7 @@ func MakeListRecentAdvisoriesHandler(vc client.Client) mcp.ToolHandlerFor[listRe
 			Name:          args.Name,
 		})
 
-		out, err := json.Marshal(response)
-		if err != nil {
-			return nil, nil, fmt.Errorf("serializing results: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
-		}, nil, nil
+		return capResult(response)
 	}
 }
 

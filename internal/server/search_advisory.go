@@ -47,7 +47,7 @@ const (
 	maxAdvisoryLimit = 100
 
 	// defaultAdvisoryLimit is the upstream maximum, so that by default nothing is
-	// withheld on row count and maxResponseBytes is the only bound.
+	// withheld on row count and the shared byte budget is the only bound.
 	//
 	// Any smaller default is arbitrary and unsafe. The API applies its exact
 	// vendor/product filter to a page only after slicing it, so the rows that
@@ -88,10 +88,6 @@ const (
 
 	variantFailedNote = "one or more alternative capitalisations could not be retrieved, so this " +
 		"result may be missing advisories filed under them; see vendors_failed"
-
-	truncatedNote = "advisory records vary hugely in size, so rows were dropped to keep this " +
-		"response within a usable context budget; dropped rows are omitted whole, never abridged — " +
-		"narrow the query or fetch a specific cve_id for the rest"
 )
 
 type searchAdvisoryArgs struct {
@@ -129,8 +125,6 @@ var SearchAdvisoryTool = &mcp.Tool{
 type searchAdvisoryResponse struct {
 	*client.SearchAdvisoryResult
 	Returned      int      `json:"returned,omitempty"`
-	Dropped       int      `json:"dropped_for_size,omitempty"`
-	DroppedCVEs   []string `json:"dropped_cves,omitempty"`
 	VendorsTried  []string `json:"vendors_tried,omitempty"`
 	VendorsFailed []string `json:"vendors_failed,omitempty"`
 	ProductsFound []string `json:"products_found,omitempty"`
@@ -163,46 +157,13 @@ func MakeSearchAdvisoryHandler(vc client.Client) mcp.ToolHandlerFor[searchAdviso
 			}
 		}
 
-		if dropped, ids := capAdvisoryBytes(&response); dropped > 0 {
-			response.Dropped = dropped
-			response.DroppedCVEs = ids
-			response.Notes = append(response.Notes, truncatedNote)
-		}
-
 		response.Returned = len(response.Data)
 		if int(response.Total) > len(response.Data) {
 			response.Notes = append(response.Notes, totalMismatchNote, slugNote)
 		}
 
-		out, err := json.Marshal(response)
-		if err != nil {
-			return nil, nil, fmt.Errorf("serializing results: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
-		}, nil, nil
+		return capResult(response)
 	}
-}
-
-// capAdvisoryBytes trims the response to the shared byte budget, naming dropped
-// records by CVE ID so the caller can fetch them individually afterwards.
-func capAdvisoryBytes(response *searchAdvisoryResponse) (int, []string) {
-	if response.SearchAdvisoryResult == nil {
-		return 0, nil
-	}
-
-	bound := boundRows(rowBound{
-		Envelope: response,
-		Rows:     response.Data,
-		Identify: func(raw json.RawMessage) string {
-			return parseAdvisoryRecord(raw).CveMetadata.CveID
-		},
-		MaxNamed: maxListedProducts,
-	})
-
-	response.Data = bound.Kept
-	return bound.Dropped, bound.Names
 }
 
 func advisoryQuery(args searchAdvisoryArgs) client.SearchAdvisoryQuery {

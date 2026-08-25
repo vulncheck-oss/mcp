@@ -32,10 +32,6 @@ const (
 	ceilingNote = "total exceeds the number of records reachable by paging (page x limit is capped " +
 		"at 10000 upstream); for the full set use a backup of this index rather than paginating"
 
-	productTruncatedNote = "rows were dropped whole to keep this response within a usable context " +
-		"budget, never abridged — narrow the query with more filters, or lower limit, to see a " +
-		"different slice"
-
 	emptyPageNote = "records match this query but none was returned on this page: the API applies the " +
 		"filter to a page after slicing it, so a small limit can yield nothing while total is " +
 		"non-zero. This is not an absence of data — retry with a larger limit"
@@ -63,8 +59,6 @@ type productResponse struct {
 	Returned   int               `json:"returned"`
 	Total      int               `json:"total"`
 	NextCursor string            `json:"next_cursor,omitempty"`
-	Dropped    int               `json:"dropped_for_size,omitempty"`
-	DroppedIDs []string          `json:"dropped_ids,omitempty"`
 	Notes      []string          `json:"notes,omitempty"`
 }
 
@@ -79,69 +73,19 @@ func productLimit(requested, fallback int) int {
 	return min(requested, maxProductLimit)
 }
 
-// rowCVE names a row by CVE ID, for indices keyed by vulnerability rather than host.
+// newProductResponse assembles a response from an index result, attaching the notes that
+// stop a sample being read as the complete set.
 //
-// Both fields are read because the exploit index puts the CVE string in id, while
-// other vulnerability-keyed indices carry it in cve.
-func rowCVE(raw json.RawMessage) string {
-	var r struct {
-		ID  string `json:"id"`
-		CVE string `json:"cve"`
-	}
-	if json.Unmarshal(raw, &r) != nil {
-		return ""
-	}
-	if r.ID != "" {
-		return r.ID
-	}
-	return r.CVE
-}
-
-// rowAddress names a row for the dropped list. Host-oriented indices are keyed by
-// address rather than by CVE, so the useful identifier is an IP.
-func rowAddress(raw json.RawMessage) string {
-	var r struct {
-		IP    string `json:"ip"`
-		SrcIP string `json:"src_ip"`
-	}
-	if json.Unmarshal(raw, &r) != nil {
-		return ""
-	}
-	if r.IP != "" {
-		return r.IP
-	}
-	return r.SrcIP
-}
-
-// newProductResponse assembles a bounded response from an index result, attaching
-// the notes that stop a sample being read as the complete set.
+// Response size is not this function's concern: capResult bounds every tool's payload on
+// the way out, so what is assembled here is the complete result and the notes describe
+// what the API did, not what MCP did to fit it.
 func newProductResponse(index string, result *client.IndexQueryResult) productResponse {
-	return newProductResponseWith(index, result, rowAddress)
-}
-
-// newProductResponseWith lets a caller name dropped rows in whatever way suits its
-// index, since what identifies a row differs between host and vulnerability data.
-func newProductResponseWith(index string, result *client.IndexQueryResult, identify func(json.RawMessage) string) productResponse {
 	response := productResponse{
 		Index:      index,
 		Data:       result.Data,
 		Total:      result.Total,
 		NextCursor: result.NextCursor,
-	}
-
-	bound := boundRows(rowBound{
-		Envelope: &response,
-		Rows:     response.Data,
-		Identify: identify,
-		MaxNamed: 25,
-	})
-	response.Data = bound.Kept
-	response.Returned = len(bound.Kept)
-
-	if bound.Dropped > 0 {
-		response.Dropped = bound.Dropped
-		response.DroppedIDs = bound.Names
-		response.Notes = append(response.Notes, productTruncatedNote)
+		Returned:   len(result.Data),
 	}
 	// An empty page with a non-zero total is not the same as no data, and must not be
 	// reported as a sample: the filter is applied to a page after it is sliced, so a

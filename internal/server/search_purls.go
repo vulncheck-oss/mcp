@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -33,13 +32,6 @@ func MakeSearchPURLsHandler(vc client.Client) mcp.ToolHandlerFor[searchPURLsArgs
 			return nil, nil, fmt.Errorf("searching PURLs: %w", err)
 		}
 
-		out, err := json.Marshal(result)
-		if err != nil {
-			return nil, nil, fmt.Errorf("serializing results: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
-		}, nil, nil
+		return capResult(result)
 	}
 }
