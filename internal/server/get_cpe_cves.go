@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -43,17 +42,10 @@ func MakeGetCPECVEsHandler(vc client.Client) mcp.ToolHandlerFor[getCPECVEsArgs, 
 			return nil, nil, fmt.Errorf("getting CPE CVEs: %w", err)
 		}
 
-		out, err := json.Marshal(getCPECVEsResult{
+		return capResult(getCPECVEsResult{
 			CPE:   args.CPE,
 			CVEs:  result.CVEs,
 			Total: result.Total,
 		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("serializing results: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
-		}, nil, nil
 	}
 }

@@ -74,14 +74,17 @@ func TestMakeIdentifyComponentHandler(t *testing.T) {
 			assert.Equal(t, tt.args.Product, gotProduct)
 			assert.Equal(t, tt.args.Version, gotVersion)
 
+			// The matches sit under `data` rather than at the document root: an array
+			// cannot carry the response_size report as a sibling, and capResult serves
+			// one shape.
 			text := result.Content[0].(*mcp.TextContent).Text
-			var got []client.IdentifyResult
+			var got identifyComponentResult
 			require.NoError(t, json.Unmarshal([]byte(text), &got))
-			require.Len(t, got, tt.wantLen)
+			require.Len(t, got.Data, tt.wantLen)
 
 			if tt.wantCPE != "" {
-				require.NotEmpty(t, got[0].Identifiers.CPE)
-				assert.Equal(t, tt.wantCPE, got[0].Identifiers.CPE[0].Value)
+				require.NotEmpty(t, got.Data[0].Identifiers.CPE)
+				assert.Equal(t, tt.wantCPE, got.Data[0].Identifiers.CPE[0].Value)
 			}
 		})
 	}

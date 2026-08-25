@@ -29,7 +29,7 @@ type searchIndexArgs struct {
 	JVNDB              string `json:"jvndb,omitempty"                 jsonschema:"Filter by Japanese vulnerability database ID, e.g. 'JVNDB-2025-007355'"`
 	Sort               string `json:"sort,omitempty"                  jsonschema:"Sort results by '_timestamp' or 'date_added'"`
 	Order              string `json:"order,omitempty"                 jsonschema:"Sort direction: 'asc' or 'desc'"`
-	Limit              int    `json:"limit,omitempty"                 jsonschema:"Number of results per page (default 1)"`
+	Limit              int    `json:"limit,omitempty"                 jsonschema:"Number of results per page (default 1, max 200)"`
 	StartCursor        bool   `json:"start_cursor,omitempty"          jsonschema:"Set true on the first call to enable cursor-based pagination; subsequent calls use the returned next_cursor value instead"`
 	Cursor             string `json:"cursor,omitempty"                jsonschema:"Cursor token from a previous next_cursor to fetch the next page"`
 }
@@ -74,6 +74,11 @@ func MakeSearchIndexHandler(vc client.Client) mcp.ToolHandlerFor[searchIndexArgs
 		if limit <= 0 {
 			limit = 1
 		}
+		// Every other paginated tool caps its page size; without one here a caller can
+		// ask for an arbitrarily large page of enriched records, which the byte budget
+		// then has to shorten away again. maxProductLimit is the documented maximum for
+		// this endpoint.
+		limit = min(limit, maxProductLimit)
 
 		result, err := vc.SearchIndex(ctx, client.SearchIndexQuery{
 			Index:              args.Index,
@@ -103,17 +108,10 @@ func MakeSearchIndexHandler(vc client.Client) mcp.ToolHandlerFor[searchIndexArgs
 			return nil, nil, fmt.Errorf("searching index: %w", err)
 		}
 
-		out, err := json.Marshal(searchIndexResult{
+		return capResult(searchIndexResult{
 			Data:       result.Data,
 			NextCursor: result.NextCursor,
 			Total:      result.Total,
 		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("serializing results: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
-		}, nil, nil
 	}
 }

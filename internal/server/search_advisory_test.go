@@ -104,6 +104,25 @@ func runAdvisoryHandler(
 	return got, queries, nil
 }
 
+func runAdvisoryResult(
+	t *testing.T,
+	args searchAdvisoryArgs,
+	respond func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error),
+) (*mcp.CallToolResult, []client.SearchAdvisoryQuery, error) {
+	t.Helper()
+
+	var queries []client.SearchAdvisoryQuery
+	mock := &mockClient{
+		searchAdvisoryFn: func(_ context.Context, q client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+			queries = append(queries, q)
+			return respond(q)
+		},
+	}
+
+	result, _, err := MakeSearchAdvisoryHandler(mock)(context.Background(), nil, args)
+	return result, queries, err
+}
+
 func TestMakeSearchAdvisoryHandler(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -413,37 +432,46 @@ func TestSearchAdvisoryResponseSize(t *testing.T) {
 		return raw
 	}
 
-	t.Run("oversized rows are dropped and named", func(t *testing.T) {
-		got, _, err := runAdvisoryHandler(t,
+	t.Run("an oversized row is reported, not silently lost", func(t *testing.T) {
+		result, _, err := runAdvisoryResult(t,
 			searchAdvisoryArgs{Vendor: "linux"},
 			func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
 				return advisoryResult(10,
-					bulkyRef("CVE-HUGE-1", maxResponseBytes),
-					bulkyRef("CVE-HUGE-2", maxResponseBytes),
+					bulkyRef("CVE-HUGE-1", 4*defaultResponseBudget),
+					bulkyRef("CVE-HUGE-2", 4*defaultResponseBudget),
 				), nil
 			})
-
 		require.NoError(t, err)
-		assert.Empty(t, got.Data, "no row fits, so none is returned")
-		assert.Positive(t, got.Dropped)
-		assert.Contains(t, got.DroppedCVEs, "CVE-HUGE-1",
-			"dropped rows must be named so they can be fetched by cve_id")
-		assert.Contains(t, got.Notes, truncatedNote)
+
+		report := sizeReport(t, result)
+		require.NotNil(t, report, "an oversized response must say so")
+		assert.NotEmpty(t, report.Note)
+		// These rows are bulky because of a long string, not a long array, so no array
+		// limit can shrink them and the floor is reached.
+		require.NotNil(t, report.Outline, "shape and weight, rather than an empty answer")
+		assert.Positive(t, report.Outline.Bytes)
 	})
 
 	t.Run("a small row behind an oversized one is still returned", func(t *testing.T) {
-		got, _, err := runAdvisoryHandler(t,
+		result, _, err := runAdvisoryResult(t,
 			searchAdvisoryArgs{Vendor: "linux"},
 			func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
 				return advisoryResult(10,
-					bulkyRef("CVE-HUGE", maxResponseBytes),
+					bulkyRef("CVE-HUGE", 4*defaultResponseBudget),
 					advisoryRef("CVE-SMALL"),
 				), nil
 			})
-
 		require.NoError(t, err)
-		require.Len(t, got.Data, 1, "an oversized row is skipped, not a stop signal")
+
+		var got searchAdvisoryResponse
+		require.NoError(t, json.Unmarshal([]byte(payloadText(t, result)), &got))
+		require.Len(t, got.Data, 1, "an oversized row must not hide the rows behind it")
 		assert.Equal(t, []string{"CVE-SMALL"}, cveIDs(t, got.Data))
+
+		report := sizeReport(t, result)
+		require.NotNil(t, report)
+		assert.Contains(t, report.RemovedIDs["/data"], "CVE-HUGE",
+			"the row that did not fit is named so it can be fetched by cve_id")
 	})
 
 	t.Run("responses stay within the byte bound", func(t *testing.T) {
@@ -461,22 +489,19 @@ func TestSearchAdvisoryResponseSize(t *testing.T) {
 			context.Background(), nil, searchAdvisoryArgs{Vendor: "linux"})
 		require.NoError(t, err)
 
-		text := result.Content[0].(*mcp.TextContent).Text
-		assert.LessOrEqual(t, len(text), maxResponseBytes+len(truncatedNote)+2048,
-			"the serialized response must stay near the budget")
+		assert.LessOrEqual(t, len(payloadText(t, result)), defaultResponseBudget,
+			"the serialized response must stay within the budget")
 	})
 
 	t.Run("a small result is untouched", func(t *testing.T) {
-		got, _, err := runAdvisoryHandler(t,
+		result, _, err := runAdvisoryResult(t,
 			searchAdvisoryArgs{Vendor: "anthropics"},
 			func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
 				return advisoryResult(1, advisoryRef("CVE-1")), nil
 			})
 
 		require.NoError(t, err)
-		assert.Zero(t, got.Dropped)
-		assert.Empty(t, got.DroppedCVEs)
-		assert.NotContains(t, got.Notes, truncatedNote)
+		assert.Nil(t, sizeReport(t, result), "nothing was done to it, so nothing is reported")
 	})
 }
 

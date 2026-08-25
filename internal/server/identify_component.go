@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -13,6 +12,19 @@ type identifyComponentArgs struct {
 	Vendor  string `json:"vendor"            jsonschema:"Vendor or manufacturer name, e.g. 'microsoft corporation'"`
 	Product string `json:"product"           jsonschema:"Product name, e.g. 'office 2016'"`
 	Version string `json:"version,omitempty" jsonschema:"Version string, e.g. '16.0.1'"`
+}
+
+// identifyComponentResult wraps the matches in an envelope rather than marshalling the
+// bare array the API hands back.
+//
+// The array is the only thing this tool has to say, so an envelope looks like ceremony.
+// It earns its place at the layer below: nothing can be a sibling of a JSON array, so a
+// bare array is the one shape that cannot carry the response_size report inside itself.
+// Wrapping it here means capResult has one shape to serve instead of two, and the report
+// always travels with the data it describes. `data` rather than `matches` because that is
+// where every other tool puts its rows.
+type identifyComponentResult struct {
+	Data []client.IdentifyResult `json:"data"`
 }
 
 var IdentifyComponentTool = &mcp.Tool{
@@ -35,13 +47,6 @@ func MakeIdentifyComponentHandler(vc client.Client) mcp.ToolHandlerFor[identifyC
 			return nil, nil, fmt.Errorf("identifying component %q %q: %w", args.Vendor, args.Product, err)
 		}
 
-		out, err := json.Marshal(results)
-		if err != nil {
-			return nil, nil, fmt.Errorf("serializing results: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
-		}, nil, nil
+		return capResult(identifyComponentResult{Data: results})
 	}
 }

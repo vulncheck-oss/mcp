@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,13 +76,6 @@ func MakeSearchIPIntelHandler(vc client.Client) mcp.ToolHandlerFor[searchIPIntel
 			return nil, nil, fmt.Errorf("searching IP intelligence: %w", err)
 		}
 
-		out, err := json.Marshal(newProductResponse(index, result))
-		if err != nil {
-			return nil, nil, fmt.Errorf("serializing results: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
-		}, nil, nil
+		return capResult(newProductResponse(index, result))
 	}
 }

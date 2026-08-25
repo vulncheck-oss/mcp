@@ -1,16 +1,57 @@
 # Available Tools
 
+## Response size
+
+Every tool that returns API records keeps its response within a byte budget — 30,000 bytes
+by default, overridable at startup with `VULNCHECK_MCP_MAX_RESPONSE_BYTES`. Record sizes
+vary enormously between indices, and `limit` bounds the number of records rather than their
+size: the Log4Shell record on `vulncheck-nvd2` is 2.16 MB on its own, which no row count
+can bound.
+
+A response within budget is returned exactly as the API produced it, byte for byte.
+
+Over budget, arrays are shortened — every array in the response, at any depth, to the same
+length. If that is not enough, records are removed as well: as many as fit are kept, in
+order, though an oversized leading record is skipped rather than allowed to hide the smaller
+ones behind it. Records that are removed are named so they can be fetched individually.
+
+Records that are returned keep every field. Their **arrays** may be shortened, and `capped`
+gives each one's true length — a record returned on the row-removal path has had its arrays
+cut to a single item, so no count visible in it should be reported as real.
+
+When a response is shortened it carries a `response_size` field alongside `data` — every
+tool returns a JSON object, so the report always travels with the records it describes and
+cannot be read apart from them. It reports:
+
+| Field | Meaning |
+|---|---|
+| `note` | **first field** — what was done and what not to trust; read this before the records |
+| `capped` | each shortened array, by JSON Pointer, and its **true length** before shortening |
+| `array_limit` | the length arrays were shortened to |
+| `rows_returned` | how many records were returned, when records were dropped |
+| `removed_ids` | identifiers of records that did not fit, so they can be fetched individually |
+| `rows_removed` | how many did not fit — `removed_ids` names at most 25 of them |
+| `arrays_shortened` | how many arrays were shortened, when `capped` lists only the longest 25 |
+| `outline` | for a response that cannot be shortened at all, where its weight actually sits |
+
+A shortened array is not a short array. If `capped` reports `references` had 5,376 entries,
+three entries in the response does not mean there are three. This is a **successful
+result**, not an error.
+
+Records dropped for size are not on the following page — the cursor advances past the whole
+page — so use `removed_ids` to fetch them, or narrow the query.
+
 ## Indices
 
 | Tool | Description |
 |------|-------------|
 | `list_indices` | List VulnCheck index names. Returns names only unless a `search` narrows the set, since the full catalogue is large; descriptions can be requested explicitly with `include_description`. |
 | `describe_index` | Report which filters an index accepts, how large it is, and which tool to query it with. Call before `search_index` against an unfamiliar index — indices accept different filters, and one an index does not support has no effect rather than raising an error. |
-| `search_index` | Query a VulnCheck index by name. Supports identifier, threat-intelligence and date-range filters, sorting, and cursor-based pagination. For IP Intelligence, Target Intelligence and Canary Intelligence, prefer the dedicated product tools below. |
+| `search_index` | Query a VulnCheck index by name. Supports identifier, threat-intelligence and date-range filters, sorting, and cursor-based pagination (`limit` defaults to 1, maximum 200). For IP Intelligence, Target Intelligence and Canary Intelligence, prefer the dedicated product tools below. |
 
 ## Products
 
-Tools for the flagship product indices. Each selects its own index, so no index name is needed, and each exposes the filters relevant to that product. Results are a **sample** of a matching population — `total` reports the size of the whole set — and responses are bounded by size rather than row count.
+Tools for the flagship product indices. Each selects its own index, so no index name is needed, and each exposes the filters relevant to that product. Results are a **sample** of a matching population — `total` reports the size of the whole set — and responses are bounded by size rather than row count, as described under [Response size](#response-size).
 
 Your MCP client lists the available arguments for each tool; the summaries below describe what each one answers.
 
