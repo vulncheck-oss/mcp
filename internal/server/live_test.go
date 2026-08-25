@@ -107,14 +107,14 @@ func TestLiveResponseSizeContract(t *testing.T) {
 				return
 			}
 
-			assert.Greater(t, report.OriginalBytes, report.Bytes)
+			assert.Greater(t, report.OriginalBytes, len(payload))
 			assert.NotEmpty(t, report.Note)
 			assert.True(t, len(report.Capped) > 0 || report.Outline != nil,
 				"every alteration is declared")
 
 			pretty, err := json.MarshalIndent(report, "", "  ")
 			require.NoError(t, err)
-			t.Logf("%d -> %d bytes\n%s", report.OriginalBytes, report.Bytes, pretty)
+			t.Logf("%d -> %d bytes\n%s", report.OriginalBytes, len(payload), pretty)
 		})
 	}
 }

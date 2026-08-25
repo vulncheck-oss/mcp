@@ -14,6 +14,19 @@ type identifyComponentArgs struct {
 	Version string `json:"version,omitempty" jsonschema:"Version string, e.g. '16.0.1'"`
 }
 
+// identifyComponentResult wraps the matches in an envelope rather than marshalling the
+// bare array the API hands back.
+//
+// The array is the only thing this tool has to say, so an envelope looks like ceremony.
+// It earns its place at the layer below: nothing can be a sibling of a JSON array, so a
+// bare array is the one shape that cannot carry the response_size report inside itself.
+// Wrapping it here means capResult has one shape to serve instead of two, and the report
+// always travels with the data it describes. `data` rather than `matches` because that is
+// where every other tool puts its rows.
+type identifyComponentResult struct {
+	Data []client.IdentifyResult `json:"data"`
+}
+
 var IdentifyComponentTool = &mcp.Tool{
 	Name:        "identify_component",
 	Title:       "Identify Component",
@@ -34,6 +47,6 @@ func MakeIdentifyComponentHandler(vc client.Client) mcp.ToolHandlerFor[identifyC
 			return nil, nil, fmt.Errorf("identifying component %q %q: %w", args.Vendor, args.Product, err)
 		}
 
-		return capResult(results)
+		return capResult(identifyComponentResult{Data: results})
 	}
 }

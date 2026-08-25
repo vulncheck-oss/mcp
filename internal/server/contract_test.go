@@ -231,15 +231,24 @@ func TestResponseSizeContract(t *testing.T) {
 			result := tc.run(t)
 
 			payload := payloadText(t, result)
+			require.Len(t, result.Content, 1,
+				"the report rides inside the payload, so there is only ever one part")
 			assert.LessOrEqual(t, len(payload), defaultResponseBudget,
 				"no tool may emit more than the budget")
 			assert.True(t, json.Valid([]byte(payload)),
 				"a shortened response is still valid JSON, not a truncated string")
 
+			// The invariant the single-part design rests on. An array has nowhere to put
+			// the report, so a tool that returned one would be shortened and not
+			// described — and capResponse refuses rather than serve that, which would
+			// turn a working tool into a blank one. Pinned here because nothing in the
+			// type system enforces it.
+			assert.Equal(t, byte('{'), payload[0],
+				"every tool must return a JSON object, or it cannot carry its own report")
+
 			report := sizeReport(t, result)
 			require.NotNil(t, report, "a shortened response must say what was done to it")
-			assert.Equal(t, len(payload), report.Bytes)
-			assert.Greater(t, report.OriginalBytes, report.Bytes)
+			assert.Greater(t, report.OriginalBytes, len(payload))
 			assert.NotEmpty(t, report.Note, "the report must say what the caller can do next")
 
 			// Either arrays were shortened, rows were removed, or the floor was reached.
