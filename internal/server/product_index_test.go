@@ -119,8 +119,14 @@ func TestNewProductResponse_WarnsWhenTotalExceedsWhatPagingCanReach(t *testing.T
 		Data:  []json.RawMessage{json.RawMessage(`{"ip":"203.0.113.1"}`)},
 		Total: offsetCeiling + 1,
 	})
-	assert.Contains(t, strings.Join(beyond.Notes, " "), "backup",
+	joined := strings.Join(beyond.Notes, " ")
+	assert.Contains(t, joined, "backup",
 		"beyond the paging ceiling the caller must be pointed at the backup")
+	// The cheaper of the two routes, and the one a caller will not guess: cursor
+	// pagination is not subject to the page x limit cap, so naming only the backup sends
+	// callers to fetch a whole index when the tool they are holding can walk it.
+	assert.Contains(t, joined, "start_cursor",
+		"the cursor is a route past the ceiling and must be named alongside the backup")
 
 	within := newProductResponse("target-intel", &client.IndexQueryResult{
 		Data:  []json.RawMessage{json.RawMessage(`{"ip":"203.0.113.1"}`)},
@@ -407,5 +413,208 @@ func TestSearchTargetIntelArgs_DoesNotSuggestCombinedClassifications(t *testing.
 	if before, _, found := strings.Cut(schema, "c2:cobalt-strike"); found {
 		assert.Contains(t, before, "Do not",
 			"if the combined form is mentioned it must be as a warning")
+	}
+}
+
+// TestIndexNotes pins which notes each shape of /v3/index result earns.
+//
+// The distinction that matters is between the universally-true half and the index-specific
+// half: sending the specific half where it is false is worse than omitting it, because a
+// caller told that `exploits` "describes a population of hosts or events" will read one row
+// per CVE as a sample of hosts. The dropped-filter warning is not here — it travels in
+// notes as its first entry, and TestDroppedFilterNote covers it.
+func TestIndexNotes(t *testing.T) {
+	rows := func(n int) []json.RawMessage {
+		out := make([]json.RawMessage, n)
+		for i := range out {
+			out[i] = json.RawMessage(`{}`)
+		}
+		return out
+	}
+
+	tests := []struct {
+		name     string
+		index    string
+		returned int
+		tot      int
+		cursor   string
+		resumed  bool
+
+		want     []string
+		wantNone []string
+	}{
+		{
+			name: "complete set earns nothing",
+			// Every row matched is present, so there is nothing to warn about.
+			index: "vulncheck-nvd2", returned: 5, tot: 5,
+			wantNone: []string{partialSetNote, populationNote, emptyPageNote, ceilingNote},
+		},
+		{
+			name: "empty page mid-walk points at the cursor, not a bigger limit",
+			// Same diagnosis, different remedy: enlarging the limit is the wrong move
+			// when the route onward is in the response the caller is already reading.
+			index: "vulncheck-nvd2", returned: 0, tot: 40, cursor: "more", resumed: true,
+			want:     []string{emptyPageMidWalkNote},
+			wantNone: []string{emptyPageNote, partialSetNote, populationNote, cursorExhaustedNote},
+		},
+		{
+			name: "an empty page mid-walk on a first call still gets the cursor advice",
+			// start_cursor was passed but no page has been consumed yet; the cursor in
+			// this response is still the route onward.
+			index: "vulncheck-nvd2", returned: 0, tot: 40, cursor: "more", resumed: false,
+			want:     []string{emptyPageMidWalkNote},
+			wantNone: []string{emptyPageNote},
+		},
+		{
+			name: "empty page at the end of a cursor walk says the walk is over",
+			// The filter-after-slicing advice is wrong here: a larger limit cannot
+			// help, because there is nothing left to page to.
+			index: "vulncheck-nvd2", returned: 0, tot: 40, cursor: "", resumed: true,
+			want:     []string{cursorExhaustedNote},
+			wantNone: []string{emptyPageNote},
+		},
+		{
+			name: "an empty page with no cursor in play keeps the retry advice",
+			// A plain query returns an empty next_cursor too, so without
+			// CursorContinuation this is indistinguishable from a finished walk.
+			index: "vulncheck-nvd2", returned: 0, tot: 40, cursor: "", resumed: false,
+			want:     []string{emptyPageNote},
+			wantNone: []string{cursorExhaustedNote},
+		},
+		{
+			name:  "a per-CVE index gets the universal half only",
+			index: "vulncheck-nvd2", returned: 1, tot: 400,
+			want:     []string{partialSetNote},
+			wantNone: []string{populationNote},
+		},
+		{
+			name:  "a host index gets both halves",
+			index: "target-intel", returned: 10, tot: 9_000,
+			want: []string{partialSetNote, populationNote},
+		},
+		{
+			name:  "windowed families match by prefix",
+			index: "ipintel-30d", returned: 10, tot: 9_000,
+			want: []string{partialSetNote, populationNote},
+		},
+		{
+			name: "canaries match by prefix, including the unwindowed index",
+			// canaryIndex("all") resolves to the bare prefix, so this is the name the
+			// tool actually queries — "vulncheck-canaries-all" is not an index.
+			index: "vulncheck-canaries", returned: 20, tot: 9_000,
+			want: []string{partialSetNote, populationNote},
+		},
+		{
+			name: "exploits is one row per CVE, not a population",
+			// It sits in dedicatedTools alongside the host indices, which is why
+			// gating on that map would tell this caller something false.
+			index: "exploits", returned: 25, tot: 900,
+			want:     []string{partialSetNote},
+			wantNone: []string{populationNote},
+		},
+		{
+			name:  "a total beyond the offset ceiling names both routes",
+			index: "vulncheck-nvd2", returned: 1, tot: offsetCeiling + 1,
+			want: []string{partialSetNote, ceilingNote},
+		},
+		{
+			name: "the ceiling note is not repeated to a caller already walking",
+			// It tells the caller to use the cursor they are holding, on every page.
+			index: "vulncheck-nvd2", returned: 1, tot: offsetCeiling + 1,
+			cursor: "more", resumed: true,
+			want:     []string{partialSetNote},
+			wantNone: []string{ceilingNote},
+		},
+		{
+			name: "a partial set names the route to the rest",
+			// Saying "report 5194" without saying how to reach the other 5192 is half
+			// an answer, and this tool takes start_cursor.
+			index: "vulncheck-nvd2", returned: 2, tot: 5_194,
+			want: []string{partialSetNote, cursorRouteNote},
+		},
+		{
+			name:  "the route is not repeated to a caller already walking",
+			index: "vulncheck-nvd2", returned: 2, tot: 5_194, cursor: "more", resumed: true,
+			want:     []string{partialSetNote},
+			wantNone: []string{cursorRouteNote},
+		},
+		{
+			name:  "above the ceiling, ceilingNote names both routes instead",
+			index: "vulncheck-nvd2", returned: 1, tot: offsetCeiling + 1,
+			want:     []string{partialSetNote, ceilingNote},
+			wantNone: []string{cursorRouteNote},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			notes := indexNotes(tt.index, &client.IndexQueryResult{
+				Data:               rows(tt.returned),
+				Total:              tt.tot,
+				NextCursor:         tt.cursor,
+				CursorContinuation: tt.resumed,
+			})
+			for _, want := range tt.want {
+				assert.Contains(t, notes, want)
+			}
+			for _, unwanted := range tt.wantNone {
+				assert.NotContains(t, notes, unwanted)
+			}
+		})
+	}
+}
+
+// TestDroppedFilterNote covers the one note that says the answer is wrong rather than
+// partial: a filter the index does not accept, which the API discards while returning
+// HTTP 200 and an unfiltered total.
+func TestDroppedFilterNote(t *testing.T) {
+	tests := []struct {
+		name     string
+		sent     []string
+		accepted []string
+		want     []string
+		wantNone bool
+	}{
+		{
+			name: "an accepted filter draws no complaint",
+			sent: []string{"cve"}, accepted: []string{"cve", "threat_actor"},
+			wantNone: true,
+		},
+		{
+			name: "a filter the index does not accept is named",
+			// The real case: target-intel accepts neither threat_actor nor
+			// ransomware, and answers 200 with the whole index.
+			sent: []string{"cve", "threat_actor"}, accepted: []string{"asn", "country", "cve"},
+			want: []string{"FILTERS NOT APPLIED", "threat_actor"},
+		},
+		{
+			name: "several dropped filters are all named",
+			sent: []string{"botnet", "ransomware"}, accepted: []string{"cve"},
+			want: []string{"botnet, ransomware"},
+		},
+		{
+			name: "no published parameter list means no claim either way",
+			// Some indices omit the list on a zero-row response. An absent list is
+			// "unknown", not "accepts nothing" — asserting a drop here would fire on
+			// a genuine no-match.
+			sent: []string{"cve", "threat_actor"}, accepted: nil,
+			wantNone: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			note := droppedFilterNoteFor(&client.IndexQueryResult{
+				FiltersSent:     tt.sent,
+				FiltersAccepted: tt.accepted,
+			})
+			if tt.wantNone {
+				assert.Empty(t, note)
+				return
+			}
+			for _, want := range tt.want {
+				assert.Contains(t, note, want)
+			}
+		})
 	}
 }

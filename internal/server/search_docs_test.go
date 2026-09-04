@@ -211,8 +211,41 @@ func TestSearchDocs_ReportsNoMatchExplicitly(t *testing.T) {
 
 	got := decodeDocs(t, res)
 	assert.Empty(t, got.Data)
-	assert.Zero(t, got.Matched)
+	assert.Zero(t, got.Total)
 	assert.Contains(t, strings.Join(got.Notes, " "), "nothing matched")
+}
+
+// TestSearchDocs_EmptyDataIsPresentNotOmitted covers what the test above cannot.
+//
+// decodeDocs unmarshals into searchDocsResult, so an absent `data` and an empty one both
+// arrive as a nil slice and Empty() passes either way. The field used to be tagged
+// omitempty, which elides an empty slice as readily as a nil one, so a search matching
+// nothing dropped `data` altogether — indistinguishable from a malfunction, and the exact
+// defect the response envelope exists to prevent. Asserting on the raw payload is the only
+// way to see it.
+func TestSearchDocs_EmptyDataIsPresentNotOmitted(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		args searchDocsArgs
+	}{
+		{"a search matching nothing", searchDocsArgs{Query: "kubernetes helm chart"}},
+		// Browse mode answers with sections and legitimately has no pages. `data: []`
+		// says so; a missing field would leave the caller guessing.
+		{"browse mode", searchDocsArgs{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			res, _, err := MakeSearchDocsHandler(docsMock(docsFixture, nil))(
+				context.Background(), nil, tt.args)
+			require.NoError(t, err)
+
+			payload := decodeNumeric(t, payloadText(t, res))
+			require.Contains(t, payload, "data",
+				"data must be present when empty, not omitted")
+			assert.Empty(t, payload["data"], "and it must be an empty list, not null")
+			require.Contains(t, payload, "returned")
+			assert.Equal(t, json.Number("0"), payload["returned"])
+		})
+	}
 }
 
 func TestSearchDocs_ReportsWhenMoreMatchedThanShown(t *testing.T) {
@@ -233,7 +266,7 @@ func TestSearchDocs_ReportsWhenMoreMatchedThanShown(t *testing.T) {
 	got := decodeDocs(t, res)
 	assert.Len(t, got.Data, maxDocsResults)
 	assert.Equal(t, maxDocsResults, got.Returned)
-	assert.Equal(t, maxDocsResults+5, got.Matched, "the caller is told how much it did not see")
+	assert.Equal(t, maxDocsResults+5, got.Total, "the caller is told how much it did not see")
 	assert.Contains(t, strings.Join(got.Notes, " "), "narrow the query")
 }
 

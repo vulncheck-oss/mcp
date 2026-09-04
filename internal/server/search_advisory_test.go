@@ -131,7 +131,7 @@ func TestMakeSearchAdvisoryHandler(t *testing.T) {
 		clientErr  error
 		wantErr    bool
 		wantLimit  int32
-		wantTotal  int32
+		wantTotal  int
 		wantLen    int
 	}{
 		{
@@ -620,4 +620,47 @@ func TestSearchAdvisoryDeterminism(t *testing.T) {
 	b, err := json.Marshal(second)
 	require.NoError(t, err)
 	assert.JSONEq(t, string(a), string(b))
+}
+
+// TestSearchAdvisoryTotalNeverBelowReturned pins the envelope's one load-bearing
+// comparison.
+//
+// The widened path unions rows from several vendor spellings while keeping only the largest
+// pre-filter count any one of them reported, so the union can in principle be larger than
+// that count. If it is, total lands below returned — and total is the number partialSetNote
+// tells a caller to report, so it would have them report fewer records than are in front of
+// them, with no note firing because Total > Returned is false.
+//
+// Not reproducible against the live API, where the pre-filter count dwarfs any union; the
+// mock forces the shape deliberately.
+func TestSearchAdvisoryTotalNeverBelowReturned(t *testing.T) {
+	upstreamCalls := 0
+	mock := &mockClient{
+		searchAdvisoryFn: func(_ context.Context, _ client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+			upstreamCalls++
+			// Disjoint rows per spelling, and a pre-filter count smaller than the
+			// union they add up to.
+			rows := make([]json.RawMessage, 0, 3)
+			for i := range 3 {
+				rows = append(rows, json.RawMessage(
+					fmt.Sprintf(`{"cveMetadata":{"cveId":"CVE-2024-%04d"}}`, upstreamCalls*10+i)))
+			}
+			return &client.SearchAdvisoryResult{Data: rows, Total: 4}, nil
+		},
+	}
+
+	result := runTool(t, mock, func(vc client.Client) toolCall {
+		return call(MakeSearchAdvisoryHandler(vc), searchAdvisoryArgs{Vendor: "apache", Limit: 100})
+	})
+
+	var got struct {
+		Returned int      `json:"returned"`
+		Total    int      `json:"total"`
+		Notes    []string `json:"notes"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payloadText(t, result)), &got))
+
+	require.Greater(t, upstreamCalls, 1, "the widening path must have run for this to mean anything")
+	assert.GreaterOrEqual(t, got.Total, got.Returned,
+		"total must never be less than the rows handed over")
 }

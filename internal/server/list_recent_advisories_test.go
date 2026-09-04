@@ -205,7 +205,7 @@ func TestListRecentAdvisories_SerializesTheDigest(t *testing.T) {
 
 	var payload recentAdvisoriesResponse
 	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
-	assert.Equal(t, int32(408894), payload.Total)
+	assert.Equal(t, 408894, payload.Total)
 	assert.Equal(t, 1, payload.Returned)
 	assert.Equal(t, "next", payload.NextCursor)
 	require.Len(t, payload.Data, 1)

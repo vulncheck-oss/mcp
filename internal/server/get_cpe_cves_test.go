@@ -82,7 +82,7 @@ func TestMakeGetCPECVEsHandler(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(text), &got))
 			assert.Equal(t, tt.args.CPE, got.CPE)
 			assert.Equal(t, tt.wantTotal, got.Total)
-			assert.Equal(t, tt.wantCVEs, got.CVEs)
+			assert.Equal(t, tt.wantCVEs, got.Data)
 		})
 	}
 }

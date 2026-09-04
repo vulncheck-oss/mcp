@@ -25,14 +25,19 @@ var SearchDocsTool = &mcp.Tool{
 	},
 }
 
+// searchDocsResult carries the pages under the shared envelope.
+//
+// It was the last list-returning tool outside that contract, reporting its match count as
+// `matched`. The distinction was imagined: `total` means how many matched upstream and
+// `returned` how many are present, which is exactly what this tool has. It does not
+// paginate, so it never carries a cursor, and it searches a locally-parsed index rather
+// than API records, so it stays outside capResult and the byte budget.
 type searchDocsResult struct {
+	envelope
 	Query    string         `json:"query,omitempty"`
 	Section  string         `json:"section,omitempty"`
-	Data     []DocPage      `json:"data,omitempty"`
-	Returned int            `json:"returned"`
-	Matched  int            `json:"matched"`
 	Sections []SectionCount `json:"sections,omitempty"`
-	Notes    []string       `json:"notes,omitempty"`
+	Data     []DocPage      `json:"data"`
 }
 
 const (
@@ -58,7 +63,13 @@ func MakeSearchDocsHandler(vc client.Client) mcp.ToolHandlerFor[searchDocsArgs, 
 		}
 
 		pages := parseDocsIndex(raw)
-		result := searchDocsResult{Query: args.Query}
+		// Data starts as an empty slice, not nil, and carries no omitempty: a search
+		// matching nothing must return `data: []` rather than drop the field, or "no
+		// pages matched" is indistinguishable from a malfunction. omitempty elides an
+		// empty slice as readily as a nil one, so the tag had to go for the count to
+		// mean anything. Browse mode answers with sections and legitimately has no
+		// pages, which `data: []` states plainly alongside the note explaining why.
+		result := searchDocsResult{Query: args.Query, Data: []DocPage{}}
 
 		if args.Query == "" {
 			// Returning every page here would cost a large share of the caller's context
@@ -71,7 +82,7 @@ func MakeSearchDocsHandler(vc client.Client) mcp.ToolHandlerFor[searchDocsArgs, 
 			matches, total := searchDocsIndex(pages, args.Query, args.Section)
 			result.Data = matches
 			result.Returned = len(matches)
-			result.Matched = total
+			result.Total = total
 
 			switch {
 			case total == 0:

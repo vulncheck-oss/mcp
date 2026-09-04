@@ -88,13 +88,10 @@ type advisoryDigestRow struct {
 }
 
 type recentAdvisoriesResponse struct {
-	Data       []advisoryDigestRow `json:"data"`
-	Returned   int                 `json:"returned"`
-	Total      int32               `json:"total"`
-	Window     string              `json:"window"`
-	Providers  map[string]int      `json:"providers,omitempty"`
-	NextCursor string              `json:"next_cursor,omitempty"`
-	Notes      []string            `json:"notes,omitempty"`
+	envelope
+	Window    string              `json:"window"`
+	Providers map[string]int      `json:"providers,omitempty"`
+	Data      []advisoryDigestRow `json:"data"`
 }
 
 // advisoryDigestSource is the subset of a CVE 5.x record the digest reads. Titles and
@@ -263,16 +260,14 @@ func buildRecentAdvisories(result *client.SearchAdvisoryResult, q digestQuery) r
 	}
 
 	response := recentAdvisoriesResponse{
-		Data:       rows,
-		Returned:   len(rows),
-		Total:      result.Total,
-		Window:     describeWindow(q.UpdatedAfter, q.UpdatedBefore),
-		Providers:  topProviders(providers),
-		NextCursor: result.NextCursor,
-		Notes:      []string{digestNote},
+		envelope:  newEnvelope(len(rows), int(result.Total), result.NextCursor),
+		Window:    describeWindow(q.UpdatedAfter, q.UpdatedBefore),
+		Providers: topProviders(providers),
+		Data:      rows,
 	}
+	response.Notes = []string{digestNote}
 
-	if int(result.Total) > len(rows) {
+	if response.Total > response.Returned {
 		response.Notes = append(response.Notes, digestPartialNote)
 	}
 	// A single feed dominating usually means it is mid-bulk-update, which makes the

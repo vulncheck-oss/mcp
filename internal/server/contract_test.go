@@ -275,7 +275,7 @@ func TestResponseSizeContract_SmallResponsesAreUntouched(t *testing.T) {
 	})
 
 	assert.Len(t, result.Content, 1, "nothing was done, so nothing is reported")
-	assert.JSONEq(t, `{"data":[{"cve":"CVE-2024-1"}],"total":1}`, payloadText(t, result))
+	assert.JSONEq(t, `{"data":[{"cve":"CVE-2024-1"}],"returned":1,"total":1}`, payloadText(t, result))
 }
 
 type toolCall func() (*mcp.CallToolResult, any, error)

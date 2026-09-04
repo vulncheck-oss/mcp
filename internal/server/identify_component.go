@@ -17,13 +17,15 @@ type identifyComponentArgs struct {
 // identifyComponentResult wraps the matches in an envelope rather than marshalling the
 // bare array the API hands back.
 //
-// The array is the only thing this tool has to say, so an envelope looks like ceremony.
-// It earns its place at the layer below: nothing can be a sibling of a JSON array, so a
-// bare array is the one shape that cannot carry the response_size report inside itself.
-// Wrapping it here means capResult has one shape to serve instead of two, and the report
-// always travels with the data it describes. `data` rather than `matches` because that is
-// where every other tool puts its rows.
+// Two reasons, and the wrapper predates the second. Nothing can be a sibling of a JSON
+// array, so a bare array is the one shape that cannot carry the response_size report inside
+// itself; wrapping it means capResult has one shape to serve instead of two, and the report
+// always travels with the data it describes. The tool now also reports returned and total
+// like every other, which a bare array has nowhere to put.
+//
+// `data` rather than `matches` because that is where every other tool puts its rows.
 type identifyComponentResult struct {
+	envelope
 	Data []client.IdentifyResult `json:"data"`
 }
 
@@ -47,6 +49,12 @@ func MakeIdentifyComponentHandler(vc client.Client) mcp.ToolHandlerFor[identifyC
 			return nil, nil, fmt.Errorf("identifying component %q %q: %w", args.Vendor, args.Product, err)
 		}
 
-		return capResult(identifyComponentResult{Data: results})
+		// This tool does not paginate, so total is the row count rather than a larger
+		// matching set. That is truthful, and it stays useful: capResult lowers returned
+		// if it trims rows, leaving total > returned to report the withholding.
+		return capResult(identifyComponentResult{
+			envelope: newEnvelope(len(results), len(results), ""),
+			Data:     results,
+		})
 	}
 }

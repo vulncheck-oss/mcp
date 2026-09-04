@@ -6,6 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/vulncheck-oss/mcp/internal/client"
+	vulncheck "github.com/vulncheck-oss/sdk-go-v2/v2"
 )
 
 type searchPURLsArgs struct {
@@ -21,6 +22,16 @@ var SearchPURLsTool = &mcp.Tool{
 	},
 }
 
+// searchPURLsResult carries the findings under the shared envelope.
+//
+// It also fixes a defect of returning the client result directly: that type tags Data
+// `omitempty`, so a query matching nothing dropped the field altogether and "no findings"
+// was indistinguishable from "the field is missing". Here data is always present.
+type searchPURLsResult struct {
+	envelope
+	Data []vulncheck.PurlBatchVulnFinding `json:"data"`
+}
+
 func registerSearchPURLs(srv *mcp.Server, vc client.Client) {
 	mcp.AddTool(srv, SearchPURLsTool, MakeSearchPURLsHandler(vc))
 }
@@ -32,6 +43,9 @@ func MakeSearchPURLsHandler(vc client.Client) mcp.ToolHandlerFor[searchPURLsArgs
 			return nil, nil, fmt.Errorf("searching PURLs: %w", err)
 		}
 
-		return capResult(result)
+		return capResult(searchPURLsResult{
+			envelope: newEnvelope(len(result.Data), result.Total, ""),
+			Data:     result.Data,
+		})
 	}
 }

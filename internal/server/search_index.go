@@ -52,6 +52,8 @@ var SearchIndexTool = &mcp.Tool{
 	Title: "Search Index",
 	Description: "Query a VulnCheck index by name (required). Use list_indices to discover available index names. " +
 		"Filter by CVE, alias, IAVA, JVNDB ID, threat actor, MITRE ATT&CK group, MISP ID, ransomware group, botnet, and date ranges. Supports sorting and cursor-based pagination. " +
+		"Indices accept different filters, and one an index does not support is ignored rather than rejected: the response is unfiltered, with no error and a total that looks right. " +
+		"Call describe_index first for an unfamiliar index — it reports which filters that index actually accepts and the values each one takes. " +
 		"For IP Intelligence, Target Intelligence and Canary Intelligence use search_ip_intel, search_target_intel and search_canaries instead — they expose host and network filters this tool does not.",
 	Annotations: &mcp.ToolAnnotations{
 		ReadOnlyHint: true,
@@ -59,9 +61,8 @@ var SearchIndexTool = &mcp.Tool{
 }
 
 type searchIndexResult struct {
-	Data       []json.RawMessage `json:"data"`
-	NextCursor string            `json:"next_cursor,omitempty"`
-	Total      int               `json:"total"`
+	envelope
+	Data []json.RawMessage `json:"data"`
 }
 
 func registerSearchIndex(srv *mcp.Server, vc client.Client) {
@@ -108,10 +109,12 @@ func MakeSearchIndexHandler(vc client.Client) mcp.ToolHandlerFor[searchIndexArgs
 			return nil, nil, fmt.Errorf("searching index: %w", err)
 		}
 
-		return capResult(searchIndexResult{
-			Data:       result.Data,
-			NextCursor: result.NextCursor,
-			Total:      result.Total,
-		})
+		response := searchIndexResult{
+			envelope: newEnvelope(len(result.Data), result.Total, result.NextCursor),
+			Data:     result.Data,
+		}
+		response.Notes = indexNotes(args.Index, result)
+
+		return capResult(response)
 	}
 }
