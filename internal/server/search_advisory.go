@@ -75,9 +75,11 @@ const (
 		"the vendor's advisories are returned instead; product strings are CNA prose and are matched " +
 		"exactly, so pick one from products_found rather than guessing"
 
-	totalMismatchNote = "total counts documents matched before the API's exact vendor/product filter " +
-		"runs, so it is an upper bound on what any spelling can return rather than a count of " +
-		"withheld records"
+	totalMismatchNote = "total counts documents matched before the API's exact vendor, product and " +
+		"version filters run, so it is an upper bound on what those filters can return rather than " +
+		"a count of withheld records — do NOT report it as the number of matching advisories. The " +
+		"rows in this response are the ones that survived; if next_cursor is present, further pages " +
+		"may add more"
 
 	trimmedNote = "more records were found than the requested limit; raise limit to see the rest"
 
@@ -182,20 +184,42 @@ func MakeSearchAdvisoryHandler(vc client.Client) mcp.ToolHandlerFor[searchAdviso
 		// Removing this line fails TestSearchAdvisoryLimitContract.
 		response.Returned = len(response.Data)
 		if response.Total > response.Returned {
-			// partialSetNote is always true here. The other two explain the API's
-			// exact vendor/product filter and are true only when one was used — a
-			// query filtered by feed name alone is simply on page one of many, and
-			// sending it the vendor explanation points at a problem it does not have.
-			// The two are not exclusive: a vendor query can be both mismatched and
-			// genuinely paginated.
-			response.Notes = append(response.Notes, partialSetNote)
-			if query.Vendor != "" || query.Product != "" {
-				response.Notes = append(response.Notes, totalMismatchNote, slugNote)
+			// partialSetNote and totalMismatchNote are mutually exclusive, not merely
+			// redundant. partialSetNote instructs the caller to report total rather
+			// than counting the rows, which is right when the shortfall is paging and
+			// wrong when it is a filter the API applied after slicing the page: there
+			// total is an upper bound on what the filter could return, and reporting
+			// it overstates the answer. A version query is the clearest case — 1 row
+			// survives against a total of 11 — and "report total" would turn one
+			// affected advisory into eleven.
+			if postSliceFiltered(query) {
+				response.Notes = append(response.Notes, totalMismatchNote)
+				// Vendor-spelling advice, so it is gated more narrowly than the
+				// note above: sending it to a query filtered only by version
+				// points at a problem that query does not have.
+				if query.Vendor != "" || query.Product != "" {
+					response.Notes = append(response.Notes, slugNote)
+				}
+			} else {
+				response.Notes = append(response.Notes, partialSetNote)
 			}
 		}
 
 		return capResult(response)
 	}
+}
+
+// postSliceFiltered reports whether the query used a filter the API applies after slicing a
+// page, which is what makes total an upper bound rather than a count of withheld records.
+//
+// Vendor and product are compared exactly and case-sensitively downstream of the page, which
+// is the defect #46 was about. Version is worse: it is not part of the upstream search query
+// at all — /v4/advisory skips it deliberately ("version checks need to happen after data
+// aggregated before return") and evaluates it against the assembled records on the way out.
+// So it narrows the rows and never touches total. Verified live: package_name=lodash returns
+// 11 rows against a total of 11, and adding any version returns 1 row against the same 11.
+func postSliceFiltered(q client.SearchAdvisoryQuery) bool {
+	return q.Vendor != "" || q.Product != "" || q.Version != ""
 }
 
 func advisoryQuery(args searchAdvisoryArgs) client.SearchAdvisoryQuery {

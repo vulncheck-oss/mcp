@@ -380,6 +380,67 @@ func TestSearchAdvisoryVendorFanOut(t *testing.T) {
 	})
 }
 
+// TestSearchAdvisoryPostSliceFilterNotes pins which explanation a shortfall earns.
+//
+// The two notes contradict each other by design: partialSetNote says to report total rather
+// than counting the rows, and totalMismatchNote says total is an upper bound that must not be
+// reported as the answer. Exactly one can be true of a given response, and sending
+// partialSetNote where a post-slice filter caused the shortfall is the harmful direction —
+// it turns one affected advisory into eleven.
+func TestSearchAdvisoryPostSliceFilterNotes(t *testing.T) {
+	// The live shape this guards: package_name=lodash returns 11 rows against a total of
+	// 11, and adding any version returns 1 row against that same total of 11, because
+	// /v4/advisory evaluates version after assembling the records.
+	oneOfEleven := func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+		return advisoryResult(11, advisoryRef("CVE-1")), nil
+	}
+
+	for _, tt := range []struct {
+		name string
+		args searchAdvisoryArgs
+		want string
+		not  string
+	}{
+		{
+			// The filter is applied on the way out, so the single row is the whole
+			// answer and total is the count before it ran.
+			name: "a version filter earns the upper-bound explanation",
+			args: searchAdvisoryArgs{Name: "ghsa", PackageName: "lodash", Version: "4.17.15"},
+			want: totalMismatchNote, not: partialSetNote,
+		},
+		{
+			name: "so does a vendor filter",
+			args: searchAdvisoryArgs{Name: "ghsa", Vendor: "Ivanti", Cursor: "c"},
+			want: totalMismatchNote, not: partialSetNote,
+		},
+		{
+			// No post-slice filter, so the shortfall really is paging and total
+			// really is the number to report.
+			name: "a feed-only query is genuinely on page one of many",
+			args: searchAdvisoryArgs{Name: "ghsa"},
+			want: partialSetNote, not: totalMismatchNote,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := runAdvisoryHandler(t, tt.args, oneOfEleven)
+			require.NoError(t, err)
+
+			assert.Contains(t, got.Notes, tt.want)
+			assert.NotContains(t, got.Notes, tt.not)
+		})
+	}
+
+	t.Run("version alone does not earn vendor-spelling advice", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t,
+			searchAdvisoryArgs{Name: "ghsa", PackageName: "lodash", Version: "4.17.15"},
+			oneOfEleven)
+
+		require.NoError(t, err)
+		assert.NotContains(t, got.Notes, slugNote,
+			"retrying a capitalisation cannot help a version filter")
+	})
+}
+
 func TestSearchAdvisoryProductFallback(t *testing.T) {
 	t.Run("an unmatchable product is dropped and real products listed", func(t *testing.T) {
 		got, queries, err := runAdvisoryHandler(t,
