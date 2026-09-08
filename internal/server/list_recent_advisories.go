@@ -39,6 +39,18 @@ const (
 	digestPartialNote = "total counts every advisory matching this window; these rows are the current " +
 		"page of it, not the whole set"
 
+	// The digest counterpart to search_advisory's totalMismatchNote, and it is here for the
+	// same reason: /v4/advisory applies vendor and product after slicing the page, so with
+	// either of them in play total counts the coarse match rather than the filtered one.
+	// digestPartialNote would then instruct the caller to report a number far above the
+	// answer. Verified live — vendor=Ivanti&updatedAfter=now-30d returns 23 rows against a
+	// total of 142, and "report total" would turn 23 Ivanti advisories into 142.
+	digestFilteredTotalNote = "total counts advisories matching this window before the API's exact " +
+		"vendor and product filters run, so it is an upper bound on what those filters can return " +
+		"rather than a count of withheld records — do NOT report it as the number of matching " +
+		"advisories. The rows in this response are the ones that survived; if next_cursor is " +
+		"present, further pages may add more"
+
 	// The advice deliberately does not suggest changing the window. Whichever feed is
 	// part-way through a bulk update fills the page, and which feed that is depends on
 	// when the call is made, so a narrower or wider window lands on a different
@@ -234,6 +246,9 @@ func MakeListRecentAdvisoriesHandler(vc client.Client) mcp.ToolHandlerFor[listRe
 			UpdatedAfter:  updatedAfter,
 			UpdatedBefore: args.UpdatedBefore,
 			Name:          args.Name,
+			Vendor:        args.Vendor,
+			Product:       args.Product,
+			Cursor:        args.Cursor,
 		})
 
 		return capResult(response)
@@ -242,10 +257,26 @@ func MakeListRecentAdvisoriesHandler(vc client.Client) mcp.ToolHandlerFor[listRe
 
 // digestQuery carries the request fields the response needs to describe itself,
 // rather than passing several interchangeable strings positionally.
+//
+// Vendor and Product are carried to be reasoned about rather than reported: they change what
+// total means, because the API applies both after slicing the page. Leaving them out is what
+// let this tool present a pre-filter count as the size of the window. Cursor is carried for
+// the same kind of reason: it says whether a walk is already under way, which is what decides
+// whether naming the cursor route is advice or noise.
 type digestQuery struct {
 	UpdatedAfter  string
 	UpdatedBefore string
 	Name          string
+	Vendor        string
+	Product       string
+	Cursor        string
+}
+
+// postSliceFiltered defers to search_advisory's predicate rather than repeating its
+// condition. Which filters narrow a page after it has been sliced is a property of
+// /v4/advisory, which both tools call, so the two must not be able to disagree about it.
+func (q digestQuery) postSliceFiltered() bool {
+	return postSliceFiltered(client.SearchAdvisoryQuery{Vendor: q.Vendor, Product: q.Product})
 }
 
 func buildRecentAdvisories(result *client.SearchAdvisoryResult, q digestQuery) recentAdvisoriesResponse {
@@ -268,7 +299,22 @@ func buildRecentAdvisories(result *client.SearchAdvisoryResult, q digestQuery) r
 	response.Notes = []string{digestNote}
 
 	if response.Total > response.Returned {
-		response.Notes = append(response.Notes, digestPartialNote)
+		// Mutually exclusive, not merely different in emphasis: digestPartialNote tells the
+		// caller to report total, which is right when the shortfall is paging and overstates
+		// the answer when a post-slice filter caused it.
+		if q.postSliceFiltered() {
+			response.Notes = append(response.Notes, digestFilteredTotalNote)
+		} else {
+			response.Notes = append(response.Notes, digestPartialNote)
+		}
+		// Naming the route is half the point of saying the set is partial, and it is owed
+		// to both clauses above: one says total overstates the answer and the other that it
+		// counts beyond this page, and neither on its own tells the caller how to reach the
+		// rest. Gated as search_advisory and the index tools gate it — not once a walk is
+		// under way, since the caller is already holding the cursor.
+		if response.NextCursor == "" && q.Cursor == "" {
+			response.Notes = append(response.Notes, cursorRouteNote)
+		}
 	}
 	// A single feed dominating usually means it is mid-bulk-update, which makes the
 	// page look like the whole story when it is one source's churn.

@@ -403,8 +403,8 @@ func TestSearchIndex_RecordsFiltersSentAndAccepted(t *testing.T) {
 }
 
 // An absent parameter list means the index did not say what it accepts, which is not the
-// same as accepting nothing. Every zero-row response omits it, so treating an empty list as
-// "everything was dropped" would fire on every empty result.
+// same as accepting nothing. Zero-row responses often omit it, so treating an empty list as
+// "everything was dropped" would fire on results that dropped nothing.
 func TestSearchIndex_AbsentParameterListIsNotEmptyAcceptance(t *testing.T) {
 	c := newAPITestClient(func(*http.Request) (*http.Response, error) {
 		return jsonResp(http.StatusOK, map[string]any{

@@ -120,10 +120,11 @@ type indexResponseMeta struct {
 	// inline with every query. It is the authoritative account of what this index can be
 	// filtered by, and it arrives free: no second request is needed to learn it.
 	//
-	// Some indices omit it on a zero-row response — vulncheck-nvd2 and exploits do,
-	// target-intel does not — so an empty list means "unknown" rather than "accepts
-	// nothing". Every index sampled publishes it on a non-empty response, cursor pages
-	// included.
+	// It can be absent on a zero-row response, so an empty list means "unknown" rather
+	// than "accepts nothing". Which zero-row responses carry it is not a property of the
+	// index: vulncheck-nvd2 publishes all 19 of its parameters for a cve that matches
+	// nothing and none for an unmatched threat_actor, though it accepts both. Every index
+	// sampled publishes it on a non-empty response, cursor pages included.
 	Parameters []struct {
 		Name string `json:"name"`
 	} `json:"parameters,omitempty"`

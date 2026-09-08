@@ -202,6 +202,16 @@ func MakeSearchAdvisoryHandler(vc client.Client) mcp.ToolHandlerFor[searchAdviso
 				}
 			} else {
 				response.Notes = append(response.Notes, partialSetNote)
+				// Naming the set partial without naming the route leaves the caller
+				// holding neither a next_cursor nor a way to ask for one, which is the
+				// gap search_cve and the index tools already close. Gated the same way:
+				// not once a walk is under way, since the caller holds the cursor.
+				//
+				// Unreachable from the widening path, which contradicts this by design —
+				// widening requires a vendor, and a vendor takes the branch above.
+				if response.NextCursor == "" && query.Cursor == "" {
+					response.Notes = append(response.Notes, cursorRouteNote)
+				}
 			}
 		}
 

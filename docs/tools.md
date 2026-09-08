@@ -26,9 +26,10 @@ rather than API records, so it bounds itself and stays outside the byte budget b
 
 **Not yet covered:** the catalogue tools — `list_indices`, `list_backups`,
 `v4_list_advisories`, `v4_list_advisory_backups` — return `{data, total}` with no `returned`
-or `notes`, and are not size-bounded. `list_backups` is the one to know about: it returns all
-516 backups with descriptions, about 62 KB, with no way to ask for names only. Tracked
-separately from the envelope work.
+or `notes`, and are not size-bounded. `list_c2_hostnames` and `list_c2_tags` are further out
+still: they return raw newline-delimited text, so they carry no envelope and no size bound at
+all. `list_backups` is the one to know about: it returns all 516 backups with descriptions,
+about 62 KB, with no way to ask for names only. Tracked separately from the envelope work.
 
 Tools add fields of their own where they have something only they can report — `index` names
 the index a product tool chose on your behalf, `vendors_tried` records the capitalisations
@@ -47,7 +48,8 @@ reported separately in `response_size`, below.) The ones to act on:
 | `the cursor walk is complete` | the other reason a page is empty: you have paged to the end. `total` counts what matched upstream, not what remains, so a larger `limit` will not produce more. |
 | `this tool cannot reach the rest` | `search_cpe` only: there is no `page`, `limit` or `cursor` argument, so the rows beyond the first 100 are unreachable here. Use `get_cpe_cves` with a wildcard CPE, or a backup. |
 | `to reach the rest, set start_cursor` | the tool pages by cursor but only issues one when asked. |
-| `these rows are one page of a larger match set` | report `total`, not the row count. |
+| `these rows are one page of a larger match set`, or `total counts every advisory matching this window` from `list_recent_advisories` | report `total`, not the row count. |
+| `total counts documents matched before`, or `total counts advisories matching this window before` | **the one case where reporting `total` overstates the answer** — the exception to the row above. `v4_search_advisory` and `list_recent_advisories` send `vendor`, `product` and `version` to an endpoint that applies them *after* slicing the page, so `total` counts the coarse match: it is an upper bound on what those filters can return, not a count of withheld records. The rows in front of you are the ones that survived — page on with `next_cursor` for more, and do not report `total` as the number of matching advisories. |
 | `this index describes a population of hosts or events` | the rows are a sample of a population rather than an enumeration. |
 | `total exceeds what a single sequence of pages can reach` | 10,000 records upstream. **Cursor pagination is not subject to it** — pass `start_cursor`, then feed `next_cursor` back as `cursor`. Use a backup of the index only if you want the whole set at once. |
 
@@ -71,10 +73,14 @@ different ways, and the second is the more dangerous:
   are indistinguishable, and the failure points at *"nothing found"* — the answer you should
   be least willing to pass on unchecked.
 
-Two further limits on the five tools that *are* checked. A zero-row response carries no
-parameter list, so it is not checked — safely, because an ignored filter can only widen a
-result, so an empty answer cannot be hiding a narrower one. And a filter an index lists but
-does not honour is invisible from outside.
+Two further limits on the five tools that *are* checked. An index does not always publish its
+parameter list on a zero-row response, and where the list is absent nothing is checked — safely,
+because an ignored filter can only widen a result, so an empty answer cannot be hiding a
+narrower one. This is not a property of the row count or of the index: `vulncheck-nvd2`
+publishes all 19 of its parameters for a `cve` that matches nothing, and none for an unmatched
+`threat_actor`, though it accepts both. So detection does still run on many zero-row responses
+— which is why `epss` reports `date` as dropped even when the query matches nothing. And a
+filter an index lists but does not honour is invisible from outside.
 
 Call `describe_index` before querying an unfamiliar index — it reports the filters that index
 accepts and the values each one takes. For the tools above it is the only check available.

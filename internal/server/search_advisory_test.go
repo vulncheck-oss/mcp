@@ -725,3 +725,55 @@ func TestSearchAdvisoryTotalNeverBelowReturned(t *testing.T) {
 	assert.GreaterOrEqual(t, got.Total, got.Returned,
 		"total must never be less than the rows handed over")
 }
+
+// TestSearchAdvisoryNamesTheCursorRoute pins the route clause on a genuine paging shortfall.
+//
+// docs/tools.md tells readers that notes and next_cursor are where the route to the rest of a
+// partial set is named. This tool paginates by cursor but only issues one when asked, so a
+// first call that carries neither left the caller with no route named at all — the gap
+// search_cve and the index tools already close.
+func TestSearchAdvisoryNamesTheCursorRoute(t *testing.T) {
+	pageOfMany := func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+		return advisoryResult(3541, advisoryRef("CVE-1")), nil
+	}
+
+	t.Run("named when no walk is under way", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t, searchAdvisoryArgs{Name: "ghsa"}, pageOfMany)
+		require.NoError(t, err)
+
+		assert.Contains(t, got.Notes, partialSetNote)
+		assert.Contains(t, got.Notes, cursorRouteNote)
+	})
+
+	t.Run("withheld once the caller holds a cursor", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t, searchAdvisoryArgs{Name: "ghsa", Cursor: "c"}, pageOfMany)
+		require.NoError(t, err)
+
+		assert.Contains(t, got.Notes, partialSetNote)
+		assert.NotContains(t, got.Notes, cursorRouteNote,
+			"repeating the route on every page of a walk is noise in a budgeted response")
+	})
+
+	t.Run("withheld when the response already carries one", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t, searchAdvisoryArgs{Name: "ghsa", StartCursor: true},
+			func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+				result := advisoryResult(3541, advisoryRef("CVE-1"))
+				result.NextCursor = "next"
+				return result, nil
+			})
+		require.NoError(t, err)
+
+		assert.NotContains(t, got.Notes, cursorRouteNote, "next_cursor is the route")
+	})
+
+	// The widening path appends widenedNote, which says pagination is unavailable. It must
+	// not also be told to paginate — and it cannot be, because widening needs a vendor and a
+	// vendor earns totalMismatchNote instead. Pinned so that stays true.
+	t.Run("never contradicts a widened search", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t, searchAdvisoryArgs{Vendor: "anthropic"}, pageOfMany)
+		require.NoError(t, err)
+
+		assert.Contains(t, got.Notes, widenedNote)
+		assert.NotContains(t, got.Notes, cursorRouteNote)
+	})
+}
