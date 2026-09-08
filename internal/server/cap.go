@@ -131,6 +131,10 @@ type capReport struct {
 
 	// RowsReturned is set only when the row list was trimmed. It is not a limit — rows
 	// are filled greedily — it saves the caller counting.
+	//
+	// It duplicates the envelope's `returned` for every tool here, but this walk is
+	// generic over decoded JSON: for a payload with no `returned` field, this is the only
+	// account of how many rows survived.
 	RowsReturned int `json:"rows_returned,omitempty"`
 
 	// RowsRemoved is how many rows did not fit. RemovedIDs names at most maxNamedRows of
@@ -259,11 +263,12 @@ func arraysCappedReport(originalBytes, limit int, capped map[string]int, total i
 
 // findRowList reports the JSON Pointer of the response's row list, or "" if it has none.
 //
-// The row list is the largest top-level array by serialized size. It is derived rather
-// than declared because the tools do not agree on where it lives: most carry rows under
-// `data` and one returns a flat list of CVE IDs under `cves`. An outer array always
-// contains its children, so the outermost is always the largest, and size breaks the tie
-// against small sibling arrays such as notes.
+// The row list is the largest top-level array by serialized size. It is derived rather than
+// declared so that the walk stays generic: every tool now carries its rows under `data`, but
+// nothing in the type system enforces that, and a tool added later that puts them elsewhere
+// still gets bounded correctly. An outer array always contains its children, so the
+// outermost is always the largest, and size breaks the tie against small sibling arrays such
+// as notes.
 //
 // The document-root case below is unreachable from today's handlers, which all return an
 // object. It stays because this walk is documented as generic over decoded JSON, and the
@@ -715,11 +720,20 @@ func rowName(row any) string {
 }
 
 func recordCappedNote(limit int) string {
+	// The floor rung is 1, so the singular case is reached routinely rather than being a
+	// theoretical edge — "shortened to 1 items" in a note whose whole job is to be believed
+	// reads as a bug in the thing reporting the bug.
+	item, entry := "items", "entries"
+	if limit == 1 {
+		item, entry = "item", "entry"
+	}
+
 	return fmt.Sprintf("ARRAY COUNTS IN THIS RESPONSE ARE NOT REAL COUNTS: every array was "+
-		"shortened to %d items to keep the response within a usable context budget. Read the "+
+		"shortened to %d %s to keep the response within a usable context budget. Read the "+
 		"true length of each from capped below before reporting any quantity — an array showing "+
-		"%d entries may have thousands. Nothing else was altered: the record is otherwise "+
-		"complete and unmodified. For the full record, fetch it via the API or CLI", limit, limit)
+		"%d %s may have thousands. Nothing else was altered: the record is otherwise "+
+		"complete and unmodified. For the full record, fetch it via the API or CLI",
+		limit, item, limit, entry)
 }
 
 // rowsTrimmedNote describes a trimmed row list. Rows reach this path only via the floor

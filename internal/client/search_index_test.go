@@ -363,3 +363,134 @@ func TestSearchIndex_OmitsUnsetKEVFlags(t *testing.T) {
 		assert.False(t, present, "%s must be absent when unset", key)
 	}
 }
+
+// TestSearchIndex_RecordsFiltersSentAndAccepted covers the two halves of the
+// silent-filter-drop defence: what this query actually filtered by, and what the index says
+// it accepts. Both have to be right for the comparison downstream to mean anything.
+func TestSearchIndex_RecordsFiltersSentAndAccepted(t *testing.T) {
+	c := newAPITestClient(func(*http.Request) (*http.Response, error) {
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{
+				"total_documents": 5,
+				// Duplicated deliberately: vulncheck-nvd2 really does list `date`
+				// twice, and a repeated name must not reach the caller twice.
+				"parameters": []any{
+					map[string]any{"name": "cve"},
+					map[string]any{"name": "date"},
+					map[string]any{"name": "date"},
+				},
+			},
+			"data": []any{},
+		}), nil
+	})
+
+	result, err := c.SearchIndex(context.Background(), SearchIndexQuery{
+		Index:       "vulncheck-nvd2",
+		CVE:         "CVE-2021-44228",
+		ThreatActor: "UNC2630",
+		// Controls, not filters. The index does not advertise these, so counting them
+		// as filters would report a dropped filter on every sorted or paged query.
+		Sort:  "_timestamp",
+		Order: "desc",
+		Limit: 10,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"cve", "threat_actor"}, result.FiltersSent,
+		"filters are recorded in upstream spelling, sorted, controls excluded")
+	assert.Equal(t, []string{"cve", "date"}, result.FiltersAccepted,
+		"the index's own list, sorted and deduped")
+}
+
+// An absent parameter list means the index did not say what it accepts, which is not the
+// same as accepting nothing. Zero-row responses often omit it, so treating an empty list as
+// "everything was dropped" would fire on results that dropped nothing.
+func TestSearchIndex_AbsentParameterListIsNotEmptyAcceptance(t *testing.T) {
+	c := newAPITestClient(func(*http.Request) (*http.Response, error) {
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{"total_documents": 0},
+			"data":  []any{},
+		}), nil
+	})
+
+	result, err := c.SearchIndex(context.Background(), SearchIndexQuery{
+		Index: "vulncheck-nvd2",
+		CVE:   "CVE-2021-44228",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"cve"}, result.FiltersSent)
+	assert.Empty(t, result.FiltersAccepted, "unknown, not empty")
+}
+
+// A blank parameter name must not count as a published list. describe_index skips these
+// already; if this side did not, one empty entry would make FiltersAccepted non-empty and
+// every filter sent would look dropped.
+func TestSearchIndex_SkipsBlankParameterNames(t *testing.T) {
+	c := newAPITestClient(func(*http.Request) (*http.Response, error) {
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{
+				"total_documents": 5,
+				"parameters":      []any{map[string]any{"name": ""}},
+			},
+			"data": []any{},
+		}), nil
+	})
+
+	result, err := c.SearchIndex(context.Background(), SearchIndexQuery{
+		Index: "vulncheck-nvd2", CVE: "CVE-2021-44228",
+	})
+	require.NoError(t, err)
+
+	assert.Empty(t, result.FiltersAccepted, "a blank name is not a parameter")
+}
+
+// CursorContinuation is what separates an exhausted cursor walk from an ordinary empty
+// page: a plain query returns an empty next_cursor too, so NextCursor alone cannot tell them
+// apart. start_cursor does not count — a first call has walked nothing.
+func TestSearchIndex_RecordsWhetherACursorWasResumed(t *testing.T) {
+	respond := func(*http.Request) (*http.Response, error) {
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{"total_documents": 5},
+			"data":  []any{},
+		}), nil
+	}
+
+	for _, tt := range []struct {
+		name  string
+		query SearchIndexQuery
+		want  bool
+	}{
+		{"plain query", SearchIndexQuery{Index: "vulncheck-nvd2"}, false},
+		{"first page of a walk", SearchIndexQuery{Index: "vulncheck-nvd2", StartCursor: true}, false},
+		{"resumed walk", SearchIndexQuery{Index: "vulncheck-nvd2", Cursor: "abc"}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := newAPITestClient(respond).SearchIndex(context.Background(), tt.query)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, result.CursorContinuation)
+		})
+	}
+}
+
+// The boolean and numeric filters go through a different code path from the string map, so
+// they need their own check that they are recorded at all.
+func TestSearchIndex_RecordsNonStringFilters(t *testing.T) {
+	c := newAPITestClient(func(*http.Request) (*http.Response, error) {
+		return jsonResp(http.StatusOK, map[string]any{
+			"_meta": map[string]any{"total_documents": 0},
+			"data":  []any{},
+		}), nil
+	})
+
+	yes := true
+	result, err := c.SearchIndex(context.Background(), SearchIndexQuery{
+		Index:       "target-intel",
+		Port:        443,
+		ContainsCVE: &yes,
+		InKEV:       &yes,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"contains_cve", "in_kev", "port"}, result.FiltersSent)
+}

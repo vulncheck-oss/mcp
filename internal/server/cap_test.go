@@ -237,16 +237,16 @@ func TestCapResponse_UnshrinkableLeadingRowIsSkippedNotFatal(t *testing.T) {
 }
 
 func TestCapResponse_FlatStringListIsFilledNotLaddered(t *testing.T) {
-	// get_cpe_cves returns a flat list of IDs under `cves`. Treating that as an inner
-	// array would shorten it to a ladder rung; treating it as the row list returns as
-	// many IDs as fit, which is two orders of magnitude more useful.
+	// get_cpe_cves returns a flat list of IDs rather than records. Treating that as an
+	// inner array would shorten it to a ladder rung; treating it as the row list returns
+	// as many IDs as fit, which is two orders of magnitude more useful.
 	cves := make([]any, 40_000)
 	for i := range cves {
 		cves[i] = fmt.Sprintf("CVE-2024-%05d", i)
 	}
 	encoded := mustMarshal(t, map[string]any{
 		"cpe":   "cpe:2.3:a:apache:log4j:*:*:*:*:*:*:*:*",
-		"cves":  cves,
+		"data":  cves,
 		"total": 40_000,
 	})
 
@@ -254,20 +254,20 @@ func TestCapResponse_FlatStringListIsFilledNotLaddered(t *testing.T) {
 	require.NotNil(t, report)
 
 	assert.LessOrEqual(t, len(out), defaultResponseBudget)
-	assert.Equal(t, 40_000, report.Capped["/cves"])
+	assert.Equal(t, 40_000, report.Capped["/data"])
 	assert.Greater(t, report.RowsReturned, 1_000,
 		"a flat ID list must be filled, not shortened to a ladder rung")
 
 	var payload struct {
 		CPE   string   `json:"cpe"`
-		CVEs  []string `json:"cves"`
+		Data  []string `json:"data"`
 		Total int      `json:"total"`
 	}
 	require.NoError(t, json.Unmarshal(out, &payload))
 	assert.Equal(t, 40_000, payload.Total, "total comes from the API and stays correct")
-	assert.Len(t, payload.CVEs, report.RowsReturned)
-	assert.Equal(t, "CVE-2024-00000", payload.CVEs[0])
-	assert.NotEmpty(t, report.RemovedIDs["/cves"], "a string row is its own identifier")
+	assert.Len(t, payload.Data, report.RowsReturned)
+	assert.Equal(t, "CVE-2024-00000", payload.Data[0])
+	assert.NotEmpty(t, report.RemovedIDs["/data"], "a string row is its own identifier")
 }
 
 func TestReportPath_NamesTheDocumentRootLegibly(t *testing.T) {

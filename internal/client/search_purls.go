@@ -8,7 +8,11 @@ import (
 )
 
 type SearchPURLsResult struct {
-	Data  []vulncheck.PurlBatchVulnFinding `json:"data,omitempty"`
+	// No omitempty on Data. This type is built here and read by the server rather than
+	// marshalled, so the tags are informational — but omitempty on a row slice is the
+	// hazard that made an empty PURL result indistinguishable from a missing field, and
+	// leaving it here invites the same mistake from whoever marshals this next.
+	Data  []vulncheck.PurlBatchVulnFinding `json:"data"`
 	Total int                              `json:"total"`
 }
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -151,4 +152,89 @@ func TestLiveLog4ShellIsUsable(t *testing.T) {
 			"only arrays that were actually shortened are reported")
 	}
 	fmt.Fprintf(os.Stderr, "note: %s\n", report.Note)
+}
+
+// TestLiveSilentFilterDropIsReported is the claim #3312 turns on, and it needs the real API
+// because the whole mechanism rests on a field the API returns: _meta.parameters.
+//
+// This test is partly a canary on upstream behaviour. It asserts that target-intel does not
+// accept threat_actor and that the API answers HTTP 200 with an unfiltered total rather than
+// rejecting the query. If #3306 lands and unknown parameters start returning 400, the
+// handler will error and this test will fail — that is the intended signal, not a regression
+// here. The detection code becomes unnecessary at that point and should be removed.
+func TestLiveSilentFilterDropIsReported(t *testing.T) {
+	token := os.Getenv("VULNCHECK_API_TOKEN")
+	if token == "" {
+		t.Skip("VULNCHECK_API_TOKEN not set")
+	}
+	handler := MakeSearchIndexHandler(client.New(token, "live-test"))
+
+	read := func(t *testing.T, args searchIndexArgs) (payload string, total int, dropped string) {
+		t.Helper()
+		result, _, err := handler(context.Background(), nil, args)
+		require.NoError(t, err)
+		payload = payloadText(t, result)
+		var got struct {
+			Total int      `json:"total"`
+			Notes []string `json:"notes"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(payload), &got))
+		for _, n := range got.Notes {
+			if strings.HasPrefix(n, "FILTERS NOT APPLIED") {
+				return payload, got.Total, n
+			}
+		}
+		return payload, got.Total, ""
+	}
+
+	// target-intel does not list threat_actor, so the filter is discarded upstream and the
+	// total is the whole index. This is the query that reads as "hosts linked to this
+	// actor" and answers with every host VulnCheck has ever seen.
+	payload, filteredTotal, dropped := read(t, searchIndexArgs{
+		Index: targetIntelIndex, ThreatActor: "UNC2630", Limit: 1,
+	})
+	require.NotEmpty(t, dropped, "an unsupported filter must be reported, not silently ignored")
+	assert.Contains(t, dropped, "threat_actor", "the note must name the filter that did nothing")
+
+	_, baselineTotal, _ := read(t, searchIndexArgs{Index: targetIntelIndex, Limit: 1})
+	assert.Equal(t, baselineTotal, filteredTotal,
+		"the filtered total equals the unfiltered one, which is what makes this dangerous")
+
+	// The warning leads the notes, and on the direct-marshal path the whole envelope
+	// precedes the rows.
+	assert.Less(t, strings.Index(payload, `"notes"`), strings.Index(payload, `"data"`),
+		"the envelope precedes the rows when the struct is marshalled directly")
+
+	// It survives the shortening path too, which is the one that matters most here: an
+	// ignored filter returns an unfiltered result, and unfiltered results are what
+	// overflow the budget.
+	capped, _, cappedDrop := read(t, searchIndexArgs{
+		Index: targetIntelIndex, ThreatActor: "UNC2630", Limit: maxProductLimit,
+	})
+	require.NotEmpty(t, cappedDrop, "the warning must survive an over-budget response")
+	require.Contains(t, capped, `"response_size"`, "200 target-intel rows must exceed the budget")
+
+	// A filter the index does accept must draw no complaint, or the note is noise.
+	_, acceptedTotal, acceptedDrop := read(t, searchIndexArgs{
+		Index: "vulncheck-nvd2", ThreatActor: "UNC2630", Limit: 1,
+	})
+	assert.Empty(t, acceptedDrop, "vulncheck-nvd2 accepts threat_actor")
+	assert.Positive(t, acceptedTotal)
+	assert.Less(t, acceptedTotal, 1_000, "and actually applied it")
+
+	// Controls are not filters. Sorting must not look like a dropped filter, or every
+	// sorted query carries a false warning.
+	_, _, sortedDrop := read(t, searchIndexArgs{
+		Index: "vulncheck-nvd2", Sort: "_timestamp", Order: "desc", Limit: 1,
+	})
+	assert.Empty(t, sortedDrop, "sort and order are controls, not filters")
+
+	// A genuine no-match publishes no parameter list, so the guard must hold: an ignored
+	// filter can only widen a result, so an empty answer cannot be hiding a narrower one.
+	_, emptyTotal, emptyDrop := read(t, searchIndexArgs{
+		Index: "vulncheck-nvd2", ThreatActor: "NOSUCHACTOR", Limit: 1,
+	})
+	assert.Zero(t, emptyTotal)
+	assert.Empty(t, emptyDrop,
+		"no parameter list means unknown, not everything-dropped")
 }

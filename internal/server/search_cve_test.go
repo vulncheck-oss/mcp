@@ -82,3 +82,55 @@ func TestMakeSearchCVEHandler(t *testing.T) {
 		})
 	}
 }
+
+// TestSearchCVE_RouteNoteOnlyWhenNoWalkIsUnderWay pins the gate on cursorRouteNote.
+//
+// The last page of a cursor walk carries no next_cursor, exactly like a first page that was
+// never asked for one. Without checking the request, a caller holding the final page is told
+// to "set start_cursor true on the first call" — sent back to the beginning of a walk it has
+// just finished. The index tools gate the same way, on CursorContinuation.
+func TestSearchCVE_RouteNoteOnlyWhenNoWalkIsUnderWay(t *testing.T) {
+	hits := make([]vulncheck.IndexCveSearchHit, 5)
+	mock := &mockClient{
+		searchCVEFn: func(context.Context, client.SearchCVEQuery) (*client.SearchCVEResult, error) {
+			// Partial, and no cursor coming back: the shape shared by a first page and
+			// a last page.
+			return &client.SearchCVEResult{Data: hits, Total: 3_501}, nil
+		},
+	}
+
+	tests := []struct {
+		name      string
+		args      searchCVEArgs
+		wantRoute bool
+	}{
+		{
+			name:      "no walk under way: name the route",
+			args:      searchCVEArgs{CVE: "CVE-2021-44228"},
+			wantRoute: true,
+		},
+		{
+			name:      "last page of a walk: the caller already knows the route",
+			args:      searchCVEArgs{CVE: "CVE-2021-44228", Cursor: "abc"},
+			wantRoute: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := runTool(t, mock, func(vc client.Client) toolCall {
+				return call(MakeSearchCVEHandler(vc), tt.args)
+			})
+
+			var got searchCVEResult
+			require.NoError(t, json.Unmarshal([]byte(payloadText(t, result)), &got))
+
+			assert.Contains(t, got.Notes, partialSetNote, "the set is partial either way")
+			if tt.wantRoute {
+				assert.Contains(t, got.Notes, cursorRouteNote)
+			} else {
+				assert.NotContains(t, got.Notes, cursorRouteNote)
+			}
+		})
+	}
+}

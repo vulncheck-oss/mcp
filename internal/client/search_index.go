@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 )
 
@@ -15,6 +16,27 @@ type IndexQueryResult struct {
 	Data       []json.RawMessage `json:"data"`
 	NextCursor string            `json:"next_cursor,omitempty"`
 	Total      int               `json:"total"`
+
+	// FiltersSent are the filter parameters this query actually put on the request, in
+	// upstream spelling. Control parameters — sort, order, limit, cursor — are excluded:
+	// the index does not list them among what it accepts, so including them here would
+	// make every sorted query look like it had a filter dropped.
+	FiltersSent []string `json:"-"`
+
+	// FiltersAccepted is the index's own account of what it accepts, read from
+	// _meta.parameters. Empty means the index did not say, which is not the same as
+	// accepting nothing — see indexResponseMeta.Parameters.
+	FiltersAccepted []string `json:"-"`
+
+	// CursorContinuation records whether this query resumed a walk, which NextCursor
+	// alone cannot say: a plain query returns an empty next_cursor too, so without this
+	// an ordinary empty page is indistinguishable from an exhausted walk.
+	//
+	// Deliberately not set by start_cursor. A first call has walked nothing, so an empty
+	// first page proves only that this page is empty — and announcing the walk complete
+	// there would replace advice that might work ("retry with a larger limit") with
+	// advice that cannot.
+	CursorContinuation bool `json:"-"`
 }
 
 type SearchIndexQuery struct {
@@ -93,6 +115,19 @@ type SearchIndexQuery struct {
 type indexResponseMeta struct {
 	TotalDocuments int    `json:"total_documents"`
 	NextCursor     string `json:"next_cursor,omitempty"`
+
+	// Parameters is the index's own list of the query parameters it accepts, returned
+	// inline with every query. It is the authoritative account of what this index can be
+	// filtered by, and it arrives free: no second request is needed to learn it.
+	//
+	// It can be absent on a zero-row response, so an empty list means "unknown" rather
+	// than "accepts nothing". Which zero-row responses carry it is not a property of the
+	// index: vulncheck-nvd2 publishes all 19 of its parameters for a cve that matches
+	// nothing and none for an unmatched threat_actor, though it accepts both. Every index
+	// sampled publishes it on a non-empty response, cursor pages included.
+	Parameters []struct {
+		Name string `json:"name"`
+	} `json:"parameters,omitempty"`
 }
 
 type indexResponse struct {
@@ -110,6 +145,20 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 		return nil, fmt.Errorf("building URL: %w", err)
 	}
 
+	// filtersSent records which filter parameters actually went on the request, in the
+	// upstream spelling, so a caller can compare them against what the index says it
+	// accepts. Recording it here rather than deriving it from the tool's arguments means
+	// it cannot drift from the query actually sent, and it needs no arg-name translation.
+	//
+	// Only filters go in. sort and order steer the request rather than narrow it and are
+	// not advertised in _meta.parameters, so counting them would report a dropped filter
+	// on every sorted query; they are set below, outside this map, for that reason. limit,
+	// page and cursor never reach here at all.
+	var filtersSent []string
+	sent := func(key string) {
+		filtersSent = append(filtersSent, key)
+	}
+
 	p := u.Query()
 	for key, value := range map[string]string{
 		"cve":                  q.CVE,
@@ -122,8 +171,6 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 		"updatedAtStartDate":   q.UpdatedAtStartDate,
 		"updatedAtEndDate":     q.UpdatedAtEndDate,
 		"date":                 q.Date,
-		"sort":                 q.Sort,
-		"order":                q.Order,
 		"asn":                  q.ASN,
 		"cidr":                 q.CIDR,
 		"country":              q.Country,
@@ -154,21 +201,35 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 	} {
 		if value != "" {
 			p.Set(key, value)
+			sent(key)
 		}
 	}
+	// Controls, not filters: set outside the map above so they are never recorded as
+	// filters sent.
+	if q.Sort != "" {
+		p.Set("sort", q.Sort)
+	}
+	if q.Order != "" {
+		p.Set("order", q.Order)
+	}
+
 	if q.Port > 0 {
 		p.Set("port", strconv.Itoa(q.Port))
+		sent("port")
 	}
 	// contains_cve=false is a meaningful filter (hosts with no associated CVE), so
 	// it is only omitted when the caller left it unset.
 	if q.ContainsCVE != nil {
 		p.Set("contains_cve", strconv.FormatBool(*q.ContainsCVE))
+		sent("contains_cve")
 	}
 	if q.InKEV != nil {
 		p.Set("in_kev", strconv.FormatBool(*q.InKEV))
+		sent("in_kev")
 	}
 	if q.InVCKEV != nil {
 		p.Set("in_vckev", strconv.FormatBool(*q.InVCKEV))
+		sent("in_vckev")
 	}
 	if q.Cursor != "" {
 		p.Set("cursor", q.Cursor)
@@ -218,9 +279,26 @@ func (c *VulncheckClient) SearchIndex(ctx context.Context, q SearchIndexQuery) (
 		items = []json.RawMessage{}
 	}
 
+	// Sorted so the same query always reports the same order, and deduped because at
+	// least one index (vulncheck-nvd2) lists a parameter twice.
+	slices.Sort(filtersSent)
+	accepted := make([]string, 0, len(envelope.Meta.Parameters))
+	for _, param := range envelope.Meta.Parameters {
+		// Skipped as describe_index skips them; an empty list means "the index did not
+		// say", and one blank entry would falsely make it look like it did.
+		if param.Name == "" {
+			continue
+		}
+		accepted = append(accepted, param.Name)
+	}
+	slices.Sort(accepted)
+
 	return &IndexQueryResult{
-		Data:       items,
-		NextCursor: envelope.Meta.NextCursor,
-		Total:      envelope.Meta.TotalDocuments,
+		Data:               items,
+		NextCursor:         envelope.Meta.NextCursor,
+		Total:              envelope.Meta.TotalDocuments,
+		FiltersSent:        filtersSent,
+		FiltersAccepted:    slices.Compact(accepted),
+		CursorContinuation: q.Cursor != "",
 	}, nil
 }

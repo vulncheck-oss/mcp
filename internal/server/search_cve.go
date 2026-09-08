@@ -6,6 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/vulncheck-oss/mcp/internal/client"
+	vulncheck "github.com/vulncheck-oss/sdk-go-v2/v2"
 )
 
 type searchCVEArgs struct {
@@ -22,6 +23,14 @@ var SearchCVETool = &mcp.Tool{
 	Annotations: &mcp.ToolAnnotations{
 		ReadOnlyHint: true,
 	},
+}
+
+// searchCVEResult carries the hits under the shared envelope. The client result has the
+// core fields already, but returning it directly left the tool with no notes field and no
+// returned count, so a trimmed page could not say how much of it was actually present.
+type searchCVEResult struct {
+	envelope
+	Data []vulncheck.IndexCveSearchHit `json:"data"`
 }
 
 func registerSearchCVE(srv *mcp.Server, vc client.Client) {
@@ -47,6 +56,20 @@ func MakeSearchCVEHandler(vc client.Client) mcp.ToolHandlerFor[searchCVEArgs, an
 			return nil, nil, fmt.Errorf("searching CVE: %w", err)
 		}
 
-		return capResult(result)
+		response := searchCVEResult{
+			envelope: newEnvelope(len(result.Data), int(result.Total), result.NextCursor),
+			Data:     result.Data,
+		}
+		// Without this the tool reports 5 rows against a total of 3,501 and says nothing
+		// about either fact — neither that the rows are a fraction of the match, nor
+		// that a cursor is how to see the rest.
+		if response.Total > response.Returned {
+			response.Notes = append(response.Notes, partialSetNote)
+			if response.NextCursor == "" && args.Cursor == "" {
+				response.Notes = append(response.Notes, cursorRouteNote)
+			}
+		}
+
+		return capResult(response)
 	}
 }

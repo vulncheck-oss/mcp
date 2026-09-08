@@ -205,7 +205,7 @@ func TestListRecentAdvisories_SerializesTheDigest(t *testing.T) {
 
 	var payload recentAdvisoriesResponse
 	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
-	assert.Equal(t, int32(408894), payload.Total)
+	assert.Equal(t, 408894, payload.Total)
 	assert.Equal(t, 1, payload.Returned)
 	assert.Equal(t, "next", payload.NextCursor)
 	require.Len(t, payload.Data, 1)
@@ -324,5 +324,136 @@ func TestBuildRecentAdvisories_FlagsAPageWithNoProse(t *testing.T) {
 		got := buildRecentAdvisories(&client.SearchAdvisoryResult{Data: rows, Total: 400000},
 			digestQuery{UpdatedAfter: "now-24h", Name: "epss"})
 		assert.NotContains(t, strings.Join(got.Notes, " "), "identity and timing only")
+	})
+}
+
+// TestBuildRecentAdvisories_PostSliceFilterNotes pins which explanation a shortfall earns,
+// the same distinction TestSearchAdvisoryPostSliceFilterNotes pins for the other tool on
+// /v4/advisory. Both tools send vendor and product to an endpoint that applies them after
+// slicing the page, so both have to tell the caller which kind of shortfall this is.
+//
+// The live shape this guards: vendor=Ivanti&updatedAfter=now-30d&limit=25 returns 23 rows
+// against a total of 142. digestPartialNote would have the caller report 142 Ivanti
+// advisories for the window where 23 is what survived the filter.
+func TestBuildRecentAdvisories_PostSliceFilterNotes(t *testing.T) {
+	rows := []json.RawMessage{advisoryRaw("CVE-1", "a", "ghsa", "", "", "", "")}
+
+	for _, tt := range []struct {
+		name  string
+		query digestQuery
+		want  string
+		not   string
+	}{
+		{
+			name:  "a vendor filter earns the upper-bound explanation",
+			query: digestQuery{UpdatedAfter: "now-30d", Vendor: "Ivanti"},
+			want:  digestFilteredTotalNote, not: digestPartialNote,
+		},
+		{
+			name:  "so does a product filter",
+			query: digestQuery{UpdatedAfter: "now-30d", Product: "Lodash"},
+			want:  digestFilteredTotalNote, not: digestPartialNote,
+		},
+		{
+			// No post-slice filter, so the shortfall really is paging and total really
+			// is the count of what matched the window.
+			name:  "a window-only query is genuinely on page one of many",
+			query: digestQuery{UpdatedAfter: "now-30d"},
+			want:  digestPartialNote, not: digestFilteredTotalNote,
+		},
+		{
+			name:  "a feed-scoped query likewise",
+			query: digestQuery{UpdatedAfter: "now-30d", Name: "ghsa"},
+			want:  digestPartialNote, not: digestFilteredTotalNote,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildRecentAdvisories(
+				&client.SearchAdvisoryResult{Data: rows, Total: 142}, tt.query)
+
+			assert.Contains(t, got.Notes, tt.want)
+			assert.NotContains(t, got.Notes, tt.not)
+		})
+	}
+}
+
+// The handler must hand the filters it sent to the response builder, not just to the API.
+// Forwarding them upstream while withholding them from the builder is exactly how the
+// pre-filter total came to be described as the window count.
+func TestListRecentAdvisories_FiltersReachTheNotes(t *testing.T) {
+	got, _, err := MakeListRecentAdvisoriesHandler(&mockClient{
+		searchAdvisoryFn: func(_ context.Context, _ client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+			return &client.SearchAdvisoryResult{
+				Data:  []json.RawMessage{advisoryRaw("CVE-1", "a", "ghsa", "", "", "", "")},
+				Total: 142,
+			}, nil
+		},
+	})(context.Background(), nil, listRecentAdvisoriesArgs{Vendor: "Ivanti", UpdatedAfter: "now-30d"})
+	require.NoError(t, err)
+
+	var response recentAdvisoriesResponse
+	require.NoError(t, json.Unmarshal([]byte(got.Content[0].(*mcp.TextContent).Text), &response))
+
+	assert.Equal(t, 142, response.Total)
+	assert.Equal(t, 1, response.Returned)
+	assert.Contains(t, response.Notes, digestFilteredTotalNote)
+	assert.NotContains(t, response.Notes, digestPartialNote)
+}
+
+// TestBuildRecentAdvisories_NamesTheCursorRoute is the digest counterpart to
+// TestSearchAdvisoryNamesTheCursorRoute. This tool paginates by cursor but only issues one
+// when asked, so a partial page that carries no next_cursor left the caller told the set was
+// incomplete and given no way to ask for the rest — on either partial clause.
+func TestBuildRecentAdvisories_NamesTheCursorRoute(t *testing.T) {
+	rows := []json.RawMessage{advisoryRaw("CVE-1", "a", "ghsa", "", "", "", "")}
+	partial := func(q digestQuery, nextCursor string) recentAdvisoriesResponse {
+		return buildRecentAdvisories(
+			&client.SearchAdvisoryResult{Data: rows, Total: 142, NextCursor: nextCursor}, q)
+	}
+
+	t.Run("named on a paging shortfall", func(t *testing.T) {
+		got := partial(digestQuery{UpdatedAfter: "now-30d"}, "")
+
+		assert.Contains(t, got.Notes, digestPartialNote)
+		assert.Contains(t, got.Notes, cursorRouteNote)
+	})
+
+	// The filtered-total clause says total overstates the answer, which is a reason to fetch
+	// the remaining pages rather than a reason not to.
+	t.Run("named alongside the filtered-total clause", func(t *testing.T) {
+		got := partial(digestQuery{UpdatedAfter: "now-30d", Vendor: "Ivanti"}, "")
+
+		assert.Contains(t, got.Notes, digestFilteredTotalNote)
+		assert.Contains(t, got.Notes, cursorRouteNote)
+	})
+
+	t.Run("withheld once the caller holds a cursor", func(t *testing.T) {
+		got := partial(digestQuery{UpdatedAfter: "now-30d", Cursor: "c"}, "")
+
+		assert.Contains(t, got.Notes, digestPartialNote)
+		assert.NotContains(t, got.Notes, cursorRouteNote,
+			"repeating the route on every page of a walk is noise in a budgeted response")
+	})
+
+	t.Run("withheld when the response already carries one", func(t *testing.T) {
+		got := partial(digestQuery{UpdatedAfter: "now-30d"}, "next")
+
+		assert.NotContains(t, got.Notes, cursorRouteNote, "next_cursor is the route")
+	})
+
+	// Forwarding the cursor upstream while withholding it from the builder is the same
+	// wiring mistake that let a pre-filter total be described as the window count.
+	t.Run("the handler hands the cursor to the builder", func(t *testing.T) {
+		got, _, err := MakeListRecentAdvisoriesHandler(&mockClient{
+			searchAdvisoryFn: func(_ context.Context, _ client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+				return &client.SearchAdvisoryResult{Data: rows, Total: 142}, nil
+			},
+		})(context.Background(), nil, listRecentAdvisoriesArgs{UpdatedAfter: "now-30d", Cursor: "c"})
+		require.NoError(t, err)
+
+		var response recentAdvisoriesResponse
+		require.NoError(t, json.Unmarshal([]byte(got.Content[0].(*mcp.TextContent).Text), &response))
+
+		assert.NotContains(t, response.Notes, cursorRouteNote)
 	})
 }

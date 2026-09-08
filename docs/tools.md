@@ -1,5 +1,90 @@
 # Available Tools
 
+## Response envelope
+
+Every list-returning tool reports the same core alongside its rows, so reading an answer does
+not depend on knowing which tool produced it:
+
+| Field | Meaning |
+|---|---|
+| `data` | the rows — **always present**, including when empty |
+| `returned` | how many rows this response carries — **always present**, including `0` |
+| `total` | how many rows matched upstream; unchanged when rows are withheld for size |
+| `next_cursor` | the cursor for the next page; absent when there is no next page |
+| `notes` | what the API did to the query — see below |
+
+`data` and `returned` are never omitted. An empty result is visibly empty rather than
+missing, because "nothing matched" and "something went wrong" must not look the same.
+
+`total > returned` means the rows in front of you are not the whole answer — `total` is. It
+does **not** always mean a next page is reachable: `search_cpe` has no `page`, `limit` or
+`cursor` argument, so its extra rows cannot be fetched through this server at all, and it
+says so in `notes`. Check `notes` and `next_cursor` for the route rather than assuming one.
+
+`search_docs` carries the core too, though it searches a locally-parsed documentation index
+rather than API records, so it bounds itself and stays outside the byte budget below.
+
+**Not yet covered:** the catalogue tools — `list_indices`, `list_backups`,
+`v4_list_advisories`, `v4_list_advisory_backups` — return `{data, total}` with no `returned`
+or `notes`, and are not size-bounded. `list_c2_hostnames` and `list_c2_tags` are further out
+still: they return raw newline-delimited text, so they carry no envelope and no size bound at
+all. `list_backups` is the one to know about: it returns all 516 backups with descriptions,
+about 62 KB, with no way to ask for names only. Tracked separately from the envelope work.
+
+Tools add fields of their own where they have something only they can report — `index` names
+the index a product tool chose on your behalf, `vendors_tried` records the capitalisations
+`v4_search_advisory` retried, `window` and `providers` describe a digest. These are additive;
+the core above is always there.
+
+### Notes
+
+`notes` explains what the **API** did to a query. (What this server did to the response is
+reported separately in `response_size`, below.) The ones to act on:
+
+| Note begins | Meaning |
+|---|---|
+| `FILTERS NOT APPLIED` | **the answer is wrong, not merely partial** — always listed first. An index accepts only some filters, and the API ignores one it does not support instead of rejecting it, returning HTTP 200, unfiltered rows and a plausible-looking `total`. The named filter did nothing. Do not report these rows as narrowed by it. |
+| `records match this query but none was returned` | an empty page with a non-zero `total`: the API filters a page *after* slicing it, so a small `limit` can yield nothing. Not an absence of data. The note ends with the remedy — **retry with a larger limit** normally, or **pass `next_cursor` back as `cursor`** when the response carries one, since enlarging the limit does not advance a walk. |
+| `the cursor walk is complete` | the other reason a page is empty: you have paged to the end. `total` counts what matched upstream, not what remains, so a larger `limit` will not produce more. |
+| `this tool cannot reach the rest` | `search_cpe` only: there is no `page`, `limit` or `cursor` argument, so the rows beyond the first 100 are unreachable here. Use `get_cpe_cves` with a wildcard CPE, or a backup. |
+| `to reach the rest, set start_cursor` | the tool pages by cursor but only issues one when asked. |
+| `these rows are one page of a larger match set`, or `total counts every advisory matching this window` from `list_recent_advisories` | report `total`, not the row count. |
+| `total counts documents matched before`, or `total counts advisories matching this window before` | **the one case where reporting `total` overstates the answer** — the exception to the row above. `v4_search_advisory` and `list_recent_advisories` send `vendor`, `product` and `version` to an endpoint that applies them *after* slicing the page, so `total` counts the coarse match: it is an upper bound on what those filters can return, not a count of withheld records. The rows in front of you are the ones that survived — page on with `next_cursor` for more, and do not report `total` as the number of matching advisories. |
+| `this index describes a population of hosts or events` | the rows are a sample of a population rather than an enumeration. |
+| `total exceeds what a single sequence of pages can reach` | 10,000 records upstream. **Cursor pagination is not subject to it** — pass `start_cursor`, then feed `next_cursor` back as `cursor`. Use a backup of the index only if you want the whole set at once. |
+
+#### Where filter-drop detection applies
+
+Drops are detected by comparing the filters sent against the parameter list the index
+publishes with every response, so it costs no extra request. That list only exists on
+`/v3/index`, so detection covers exactly five tools: **`search_index`,
+`search_target_intel`, `search_ip_intel`, `search_canaries`, `search_curated_exploits`**.
+
+**On every other tool, the absence of a `FILTERS NOT APPLIED` note is not evidence that your
+filters were applied.** `search_cve`, `search_cpe`, `search_purls`, `get_cpe_cves`,
+`identify_component`, `v4_search_advisory` and `list_recent_advisories` sit on endpoints that
+publish no parameter list, and they cannot be checked. Their upstream endpoints fail in two
+different ways, and the second is the more dangerous:
+
+- `/v3/search/cve`, `/v3/search/cpe`, `/v3/cpe` **ignore** an unrecognised parameter and
+  return HTTP 200 with the *unfiltered* set — so a result can be broader than you asked for.
+- `/v4/advisory` returns **nothing**: an unrecognised parameter yields `total: 0` with a
+  response byte-identical to a genuine no-match. A typo'd filter and "no advisories match"
+  are indistinguishable, and the failure points at *"nothing found"* — the answer you should
+  be least willing to pass on unchecked.
+
+Two further limits on the five tools that *are* checked. An index does not always publish its
+parameter list on a zero-row response, and where the list is absent nothing is checked — safely,
+because an ignored filter can only widen a result, so an empty answer cannot be hiding a
+narrower one. This is not a property of the row count or of the index: `vulncheck-nvd2`
+publishes all 19 of its parameters for a `cve` that matches nothing, and none for an unmatched
+`threat_actor`, though it accepts both. So detection does still run on many zero-row responses
+— which is why `epss` reports `date` as dropped even when the query matches nothing. And a
+filter an index lists but does not honour is invisible from outside.
+
+Call `describe_index` before querying an unfamiliar index — it reports the filters that index
+accepts and the values each one takes. For the tools above it is the only check available.
+
 ## Response size
 
 Every tool that returns API records keeps its response within a byte budget — 30,000 bytes
@@ -21,7 +106,8 @@ cut to a single item, so no count visible in it should be reported as real.
 
 When a response is shortened it carries a `response_size` field alongside `data` — every
 tool returns a JSON object, so the report always travels with the records it describes and
-cannot be read apart from them. It reports:
+cannot be read apart from them. It describes what **this server** did to fit the response,
+where [`notes`](#notes) describes what the API did to the query. It reports:
 
 | Field | Meaning |
 |---|---|
@@ -86,8 +172,8 @@ Your MCP client lists the available arguments for each tool; the summaries below
 
 | Tool | Description |
 |------|-------------|
-| `get_cpe_cves` | Return all CVE IDs associated with a CPE 2.3 string. Optionally restrict to CVEs where the CPE is confirmed vulnerable. Any attribute accepts `*` and `?` wildcards, so a trailing wildcard on the product covers every product sharing that prefix in one call — prefer this over `search_cpe` when exploring a vendor, because `search_cpe` returns every matching CPE and its response can reach tens of megabytes. Wildcarding both vendor and product is unbounded and should be avoided. |
-| `search_cpe` | Search for CPEs by component fields (vendor, product, version, part) and return matching CPEs with their associated CVEs. |
+| `get_cpe_cves` | Return all CVE IDs associated with a CPE 2.3 string. Optionally restrict to CVEs where the CPE is confirmed vulnerable. Any attribute accepts `*` and `?` wildcards, so a trailing wildcard on the product covers every product sharing that prefix in one call — prefer this over `search_cpe` when exploring a vendor: `search_cpe` returns at most 100 CPEs per call with no way to page to the rest, and its response can still reach tens of megabytes because each CPE carries its full CVE list. Wildcarding both vendor and product is unbounded and should be avoided. |
+| `search_cpe` | Search for CPEs by component fields (vendor, product, version, part) and return matching CPEs with their associated CVEs. `vulnerable_only` narrows the CVEs listed against each CPE, **not** the CPEs returned — the row count is unchanged by it. |
 | `search_purls` | Return vulnerability findings for one or more Package URLs (PURLs). Each result includes associated CVEs and vulnerability details. |
 | `identify_component` | Convert a vendor, product, and optional version into best-match CPE and PURL identifiers with confidence levels. |
 

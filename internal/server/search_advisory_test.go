@@ -131,7 +131,7 @@ func TestMakeSearchAdvisoryHandler(t *testing.T) {
 		clientErr  error
 		wantErr    bool
 		wantLimit  int32
-		wantTotal  int32
+		wantTotal  int
 		wantLen    int
 	}{
 		{
@@ -380,6 +380,67 @@ func TestSearchAdvisoryVendorFanOut(t *testing.T) {
 	})
 }
 
+// TestSearchAdvisoryPostSliceFilterNotes pins which explanation a shortfall earns.
+//
+// The two notes contradict each other by design: partialSetNote says to report total rather
+// than counting the rows, and totalMismatchNote says total is an upper bound that must not be
+// reported as the answer. Exactly one can be true of a given response, and sending
+// partialSetNote where a post-slice filter caused the shortfall is the harmful direction —
+// it turns one affected advisory into eleven.
+func TestSearchAdvisoryPostSliceFilterNotes(t *testing.T) {
+	// The live shape this guards: package_name=lodash returns 11 rows against a total of
+	// 11, and adding any version returns 1 row against that same total of 11, because
+	// /v4/advisory evaluates version after assembling the records.
+	oneOfEleven := func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+		return advisoryResult(11, advisoryRef("CVE-1")), nil
+	}
+
+	for _, tt := range []struct {
+		name string
+		args searchAdvisoryArgs
+		want string
+		not  string
+	}{
+		{
+			// The filter is applied on the way out, so the single row is the whole
+			// answer and total is the count before it ran.
+			name: "a version filter earns the upper-bound explanation",
+			args: searchAdvisoryArgs{Name: "ghsa", PackageName: "lodash", Version: "4.17.15"},
+			want: totalMismatchNote, not: partialSetNote,
+		},
+		{
+			name: "so does a vendor filter",
+			args: searchAdvisoryArgs{Name: "ghsa", Vendor: "Ivanti", Cursor: "c"},
+			want: totalMismatchNote, not: partialSetNote,
+		},
+		{
+			// No post-slice filter, so the shortfall really is paging and total
+			// really is the number to report.
+			name: "a feed-only query is genuinely on page one of many",
+			args: searchAdvisoryArgs{Name: "ghsa"},
+			want: partialSetNote, not: totalMismatchNote,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := runAdvisoryHandler(t, tt.args, oneOfEleven)
+			require.NoError(t, err)
+
+			assert.Contains(t, got.Notes, tt.want)
+			assert.NotContains(t, got.Notes, tt.not)
+		})
+	}
+
+	t.Run("version alone does not earn vendor-spelling advice", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t,
+			searchAdvisoryArgs{Name: "ghsa", PackageName: "lodash", Version: "4.17.15"},
+			oneOfEleven)
+
+		require.NoError(t, err)
+		assert.NotContains(t, got.Notes, slugNote,
+			"retrying a capitalisation cannot help a version filter")
+	})
+}
+
 func TestSearchAdvisoryProductFallback(t *testing.T) {
 	t.Run("an unmatchable product is dropped and real products listed", func(t *testing.T) {
 		got, queries, err := runAdvisoryHandler(t,
@@ -620,4 +681,99 @@ func TestSearchAdvisoryDeterminism(t *testing.T) {
 	b, err := json.Marshal(second)
 	require.NoError(t, err)
 	assert.JSONEq(t, string(a), string(b))
+}
+
+// TestSearchAdvisoryTotalNeverBelowReturned pins the envelope's one load-bearing
+// comparison.
+//
+// The widened path unions rows from several vendor spellings while keeping only the largest
+// pre-filter count any one of them reported, so the union can in principle be larger than
+// that count. If it is, total lands below returned — and total is the number partialSetNote
+// tells a caller to report, so it would have them report fewer records than are in front of
+// them, with no note firing because Total > Returned is false.
+//
+// Not reproducible against the live API, where the pre-filter count dwarfs any union; the
+// mock forces the shape deliberately.
+func TestSearchAdvisoryTotalNeverBelowReturned(t *testing.T) {
+	upstreamCalls := 0
+	mock := &mockClient{
+		searchAdvisoryFn: func(_ context.Context, _ client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+			upstreamCalls++
+			// Disjoint rows per spelling, and a pre-filter count smaller than the
+			// union they add up to.
+			rows := make([]json.RawMessage, 0, 3)
+			for i := range 3 {
+				rows = append(rows, json.RawMessage(
+					fmt.Sprintf(`{"cveMetadata":{"cveId":"CVE-2024-%04d"}}`, upstreamCalls*10+i)))
+			}
+			return &client.SearchAdvisoryResult{Data: rows, Total: 4}, nil
+		},
+	}
+
+	result := runTool(t, mock, func(vc client.Client) toolCall {
+		return call(MakeSearchAdvisoryHandler(vc), searchAdvisoryArgs{Vendor: "apache", Limit: 100})
+	})
+
+	var got struct {
+		Returned int      `json:"returned"`
+		Total    int      `json:"total"`
+		Notes    []string `json:"notes"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payloadText(t, result)), &got))
+
+	require.Greater(t, upstreamCalls, 1, "the widening path must have run for this to mean anything")
+	assert.GreaterOrEqual(t, got.Total, got.Returned,
+		"total must never be less than the rows handed over")
+}
+
+// TestSearchAdvisoryNamesTheCursorRoute pins the route clause on a genuine paging shortfall.
+//
+// docs/tools.md tells readers that notes and next_cursor are where the route to the rest of a
+// partial set is named. This tool paginates by cursor but only issues one when asked, so a
+// first call that carries neither left the caller with no route named at all — the gap
+// search_cve and the index tools already close.
+func TestSearchAdvisoryNamesTheCursorRoute(t *testing.T) {
+	pageOfMany := func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+		return advisoryResult(3541, advisoryRef("CVE-1")), nil
+	}
+
+	t.Run("named when no walk is under way", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t, searchAdvisoryArgs{Name: "ghsa"}, pageOfMany)
+		require.NoError(t, err)
+
+		assert.Contains(t, got.Notes, partialSetNote)
+		assert.Contains(t, got.Notes, cursorRouteNote)
+	})
+
+	t.Run("withheld once the caller holds a cursor", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t, searchAdvisoryArgs{Name: "ghsa", Cursor: "c"}, pageOfMany)
+		require.NoError(t, err)
+
+		assert.Contains(t, got.Notes, partialSetNote)
+		assert.NotContains(t, got.Notes, cursorRouteNote,
+			"repeating the route on every page of a walk is noise in a budgeted response")
+	})
+
+	t.Run("withheld when the response already carries one", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t, searchAdvisoryArgs{Name: "ghsa", StartCursor: true},
+			func(client.SearchAdvisoryQuery) (*client.SearchAdvisoryResult, error) {
+				result := advisoryResult(3541, advisoryRef("CVE-1"))
+				result.NextCursor = "next"
+				return result, nil
+			})
+		require.NoError(t, err)
+
+		assert.NotContains(t, got.Notes, cursorRouteNote, "next_cursor is the route")
+	})
+
+	// The widening path appends widenedNote, which says pagination is unavailable. It must
+	// not also be told to paginate — and it cannot be, because widening needs a vendor and a
+	// vendor earns totalMismatchNote instead. Pinned so that stays true.
+	t.Run("never contradicts a widened search", func(t *testing.T) {
+		got, _, err := runAdvisoryHandler(t, searchAdvisoryArgs{Vendor: "anthropic"}, pageOfMany)
+		require.NoError(t, err)
+
+		assert.Contains(t, got.Notes, widenedNote)
+		assert.NotContains(t, got.Notes, cursorRouteNote)
+	})
 }

@@ -75,9 +75,11 @@ const (
 		"the vendor's advisories are returned instead; product strings are CNA prose and are matched " +
 		"exactly, so pick one from products_found rather than guessing"
 
-	totalMismatchNote = "total counts documents matched before the API's exact vendor/product filter " +
-		"runs, so it is an upper bound on what any spelling can return rather than a count of " +
-		"withheld records"
+	totalMismatchNote = "total counts documents matched before the API's exact vendor, product and " +
+		"version filters run, so it is an upper bound on what those filters can return rather than " +
+		"a count of withheld records — do NOT report it as the number of matching advisories. The " +
+		"rows in this response are the ones that survived; if next_cursor is present, further pages " +
+		"may add more"
 
 	trimmedNote = "more records were found than the requested limit; raise limit to see the rest"
 
@@ -118,17 +120,37 @@ var SearchAdvisoryTool = &mcp.Tool{
 	},
 }
 
-// searchAdvisoryResponse wraps the client result so the handler can explain, in
-// band, when it widened the query and why the API's own total may exceed the rows
-// returned. Every added field is omitempty, so an un-widened response keeps the
-// wire shape callers already depend on.
+// searchAdvisoryResponse explains, in band, when the handler widened the query and why
+// the API's own total may exceed the rows returned.
+//
+// The vendor and product fields are specific to this tool: it is the only one that retries
+// alternative capitalisations and drops an unmatchable product filter, so it is the only
+// one with a fan-out to account for. They stay here rather than moving into envelope.
+//
+// Data, total and next_cursor are declared directly rather than inherited by embedding
+// *client.SearchAdvisoryResult, which is how this type used to get them. Keeping that
+// embedding would have put `total` and `next_cursor` at the same depth as envelope's, and
+// encoding/json drops every conflicting name at a given depth and returns no error: both
+// fields would have silently left the wire, with nothing failing to say so.
+//
+// Returned is no longer omitempty. It previously disappeared at exactly returned == 0, the
+// one value worth reporting, and capResult's correctReturned skips absent fields, so a
+// trimmed response could not have its count corrected either.
 type searchAdvisoryResponse struct {
-	*client.SearchAdvisoryResult
-	Returned      int      `json:"returned,omitempty"`
-	VendorsTried  []string `json:"vendors_tried,omitempty"`
-	VendorsFailed []string `json:"vendors_failed,omitempty"`
-	ProductsFound []string `json:"products_found,omitempty"`
-	Notes         []string `json:"notes,omitempty"`
+	envelope
+	VendorsTried  []string          `json:"vendors_tried,omitempty"`
+	VendorsFailed []string          `json:"vendors_failed,omitempty"`
+	ProductsFound []string          `json:"products_found,omitempty"`
+	Data          []json.RawMessage `json:"data"`
+}
+
+// newAdvisoryResponse seeds a response from a client result, so the three places that
+// build one cannot disagree about how the core fields are filled.
+func newAdvisoryResponse(result *client.SearchAdvisoryResult) searchAdvisoryResponse {
+	return searchAdvisoryResponse{
+		envelope: newEnvelope(len(result.Data), int(result.Total), result.NextCursor),
+		Data:     result.Data,
+	}
 }
 
 func registerSearchAdvisory(srv *mcp.Server, vc client.Client) {
@@ -144,7 +166,7 @@ func MakeSearchAdvisoryHandler(vc client.Client) mcp.ToolHandlerFor[searchAdviso
 			return nil, nil, fmt.Errorf("searching advisories: %w", err)
 		}
 
-		response := searchAdvisoryResponse{SearchAdvisoryResult: result}
+		response := newAdvisoryResponse(result)
 		if canWiden(query) && underDelivered(result) {
 			response = widenAdvisorySearch(ctx, vc, query, result)
 			// Widening reads larger upstream pages than the caller asked for,
@@ -157,13 +179,57 @@ func MakeSearchAdvisoryHandler(vc client.Client) mcp.ToolHandlerFor[searchAdviso
 			}
 		}
 
+		// Recomputed, not redundant: newAdvisoryResponse set this at construction, and the
+		// widening branch above may then have trimmed Data back to the caller's limit.
+		// Removing this line fails TestSearchAdvisoryLimitContract.
 		response.Returned = len(response.Data)
-		if int(response.Total) > len(response.Data) {
-			response.Notes = append(response.Notes, totalMismatchNote, slugNote)
+		if response.Total > response.Returned {
+			// partialSetNote and totalMismatchNote are mutually exclusive, not merely
+			// redundant. partialSetNote instructs the caller to report total rather
+			// than counting the rows, which is right when the shortfall is paging and
+			// wrong when it is a filter the API applied after slicing the page: there
+			// total is an upper bound on what the filter could return, and reporting
+			// it overstates the answer. A version query is the clearest case — 1 row
+			// survives against a total of 11 — and "report total" would turn one
+			// affected advisory into eleven.
+			if postSliceFiltered(query) {
+				response.Notes = append(response.Notes, totalMismatchNote)
+				// Vendor-spelling advice, so it is gated more narrowly than the
+				// note above: sending it to a query filtered only by version
+				// points at a problem that query does not have.
+				if query.Vendor != "" || query.Product != "" {
+					response.Notes = append(response.Notes, slugNote)
+				}
+			} else {
+				response.Notes = append(response.Notes, partialSetNote)
+				// Naming the set partial without naming the route leaves the caller
+				// holding neither a next_cursor nor a way to ask for one, which is the
+				// gap search_cve and the index tools already close. Gated the same way:
+				// not once a walk is under way, since the caller holds the cursor.
+				//
+				// Unreachable from the widening path, which contradicts this by design —
+				// widening requires a vendor, and a vendor takes the branch above.
+				if response.NextCursor == "" && query.Cursor == "" {
+					response.Notes = append(response.Notes, cursorRouteNote)
+				}
+			}
 		}
 
 		return capResult(response)
 	}
+}
+
+// postSliceFiltered reports whether the query used a filter the API applies after slicing a
+// page, which is what makes total an upper bound rather than a count of withheld records.
+//
+// Vendor and product are compared exactly and case-sensitively downstream of the page, which
+// is the defect #46 was about. Version is worse: it is not part of the upstream search query
+// at all — /v4/advisory skips it deliberately ("version checks need to happen after data
+// aggregated before return") and evaluates it against the assembled records on the way out.
+// So it narrows the rows and never touches total. Verified live: package_name=lodash returns
+// 11 rows against a total of 11, and adding any version returns 1 row against the same 11.
+func postSliceFiltered(q client.SearchAdvisoryQuery) bool {
+	return q.Vendor != "" || q.Product != "" || q.Version != ""
 }
 
 func advisoryQuery(args searchAdvisoryArgs) client.SearchAdvisoryQuery {
@@ -280,12 +346,10 @@ func widenAdvisorySearch(
 		notes = append(notes, variantFailedNote)
 	}
 
-	response := searchAdvisoryResponse{
-		SearchAdvisoryResult: merged.result(),
-		VendorsTried:         tried,
-		VendorsFailed:        failed,
-		Notes:                notes,
-	}
+	response := newAdvisoryResponse(merged.result())
+	response.VendorsTried = tried
+	response.VendorsFailed = failed
+	response.Notes = notes
 	if len(response.Data) > 0 || query.Product == "" {
 		return response
 	}
@@ -336,13 +400,13 @@ func dropProductFilter(
 		notes = append(notes, variantFailedNote)
 	}
 
-	return searchAdvisoryResponse{
-		SearchAdvisoryResult: result,
-		VendorsTried:         tried,
-		VendorsFailed:        failed,
-		ProductsFound:        productNames(result.Data),
-		Notes:                notes,
-	}
+	response := newAdvisoryResponse(result)
+	response.VendorsTried = tried
+	response.VendorsFailed = failed
+	response.ProductsFound = productNames(result.Data)
+	response.Notes = notes
+
+	return response
 }
 
 // vendorCaseVariants returns the spellings to try, in a fixed order so the merged
@@ -431,7 +495,25 @@ func (m *advisoryMerge) result() *client.SearchAdvisoryResult {
 		}
 	}
 
-	return &client.SearchAdvisoryResult{Data: data, Total: m.total}
+	// Never report a total below the rows being handed over.
+	//
+	// add keeps the largest pre-filter count any single spelling reported, but the union
+	// is assembled from all of them, so in principle it can be larger than that count —
+	// leaving total < returned. That inverts the one signal the envelope is built on:
+	// total > returned means "partial", and partialSetNote tells the caller to report
+	// total rather than counting the rows in front of it.
+	//
+	// Defensive rather than observed. Against the live API the pre-filter count is orders
+	// of magnitude larger than any union (vendor "apache": total 2,265, union 8), because
+	// the coarse match appears to be case-insensitive and therefore shared between
+	// spellings, which bounds the union by it. That is an upstream property we infer, not
+	// one we control, and the envelope should not depend on it.
+	total := m.total
+	if len(data) > int(total) {
+		total = int32(len(data)) //nolint:gosec // G115: bounded by maxAdvisoryLimit per spelling
+	}
+
+	return &client.SearchAdvisoryResult{Data: data, Total: total}
 }
 
 // productNames lists the distinct product and package names present, so a caller

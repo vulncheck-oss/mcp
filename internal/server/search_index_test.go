@@ -32,9 +32,12 @@ func TestMakeSearchIndexHandler(t *testing.T) {
 				Total:      100,
 			},
 			wantResult: searchIndexResult{
-				Data:       []json.RawMessage{json.RawMessage(`{"id":"CVE-2021-44228"}`)},
-				NextCursor: "next",
-				Total:      100,
+				Data: []json.RawMessage{json.RawMessage(`{"id":"CVE-2021-44228"}`)},
+				envelope: envelope{
+					Returned:   1,
+					Total:      100,
+					NextCursor: "next",
+				},
 			},
 		},
 		{
@@ -86,6 +89,7 @@ func TestMakeSearchIndexHandler(t *testing.T) {
 			text := result.Content[0].(*mcp.TextContent).Text
 			var got searchIndexResult
 			require.NoError(t, json.Unmarshal([]byte(text), &got))
+			assert.Equal(t, tt.wantResult.Returned, got.Returned)
 			assert.Equal(t, tt.wantResult.Total, got.Total)
 			assert.Equal(t, tt.wantResult.NextCursor, got.NextCursor)
 			assert.Len(t, got.Data, len(tt.wantResult.Data))
