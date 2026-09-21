@@ -16,6 +16,7 @@ func TestMakeGetAdvisoryBackupHandler(t *testing.T) {
 	feed := "ghsa"
 	available := true
 	urlMrap := "https://s3.example.com/ghsa.zip"
+	url := "https://serve.vulncheck.com/v4DataBackups/ghsa.zip?Signature=abc"
 
 	tests := []struct {
 		name       string
@@ -29,9 +30,11 @@ func TestMakeGetAdvisoryBackupHandler(t *testing.T) {
 			name: "returns backup URLs for feed",
 			args: getAdvisoryBackupArgs{Name: feed},
 			clientResp: &vulncheck.BackupBackupResponse{
-				Feed:      &feed,
-				Available: &available,
-				UrlMrap:   &urlMrap,
+				Feed:          &feed,
+				Available:     &available,
+				Url:           &url,
+				UrlCloudfront: &url,
+				UrlMrap:       &urlMrap,
 			},
 			wantFeed: feed,
 		},
@@ -68,6 +71,9 @@ func TestMakeGetAdvisoryBackupHandler(t *testing.T) {
 			var got vulncheck.BackupBackupResponse
 			require.NoError(t, json.Unmarshal([]byte(text), &got))
 			assert.Equal(t, tt.wantFeed, *got.Feed)
+			assert.Equal(t, url, *got.Url)
+			assert.Equal(t, url, *got.UrlCloudfront)
+			assert.Contains(t, text, `"url":"https://serve.vulncheck.com`)
 		})
 	}
 }
