@@ -3,7 +3,7 @@ module github.com/vulncheck-oss/mcp
 go 1.26.0
 
 require (
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/stretchr/testify v1.11.1
 	github.com/vulncheck-oss/sdk-go-v2/v2 v2.1.29
 )
