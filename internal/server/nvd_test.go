@@ -152,7 +152,7 @@ func TestMakeSearchNVDCVEHistoryHandler(t *testing.T) {
 		return call(MakeSearchNVDCVEHistoryHandler(vc), searchNVDCVEHistoryArgs{CVEID: cveID, StartCursor: true})
 	})
 
-	assert.Equal(t, client.NVDCVEHistoryQuery{CVEID: cveID, Page: client.NVDPage{Limit: 20, StartCursor: true}}, got)
+	assert.Equal(t, client.NVDCVEHistoryQuery{CVEID: cveID, Page: client.NVDPage{Limit: 10, StartCursor: true}}, got)
 	payload := decodeNVDPayload(t, payloadText(t, result))
 	assert.Equal(t, cveID, payload.Data[0]["cveId"])
 	assert.Equal(t, "next", payload.NextCursor)
@@ -253,11 +253,12 @@ func TestMakeSearchNVDSourcesHandler(t *testing.T) {
 }
 
 // TestRowName_NVDRecords pins the identifiers the response cap reports for NVD rows it
-// withholds. NVD names them in camelCase, so without these keys every withheld row would
-// go unnamed and the caller could not fetch it afterwards.
+// withholds: each is one the caller can fetch the row by afterwards.
 func TestRowName_NVDRecords(t *testing.T) {
 	assert.Equal(t, "CVE-2021-44228", rowName(map[string]any{"id": "CVE-2021-44228", "sourceIdentifier": "nvd@nist.gov"}))
-	assert.Equal(t, "CVE-2021-44228", rowName(map[string]any{"cveId": "CVE-2021-44228", "cveChangeId": "x"}))
+	// A history row has no identifier the API can fetch it by, and every row of one CVE's
+	// history shares its cveId, so naming rows by it would list one CVE once per row withheld.
+	assert.Empty(t, rowName(map[string]any{"cveId": "CVE-2021-44228", "cveChangeId": "x", "eventName": "CVE Modified"}))
 	assert.Equal(t, "mc-1", rowName(map[string]any{"criteria": "cpe:2.3:a:apache:log4j:*:*:*:*:*:*:*:*", "matchCriteriaId": "mc-1"}))
 	assert.Equal(t, "cpe:2.3:a:apache:log4j:2.0:*:*:*:*:*:*:*", rowName(map[string]any{"cpeName": "cpe:2.3:a:apache:log4j:2.0:*:*:*:*:*:*:*", "cpeNameId": "uuid"}))
 }

@@ -13,7 +13,7 @@ type searchNVDCVEHistoryArgs struct {
 	EventName       string `json:"event_name,omitempty"        jsonschema:"Only changes of this type, e.g. 'Initial Analysis', 'Reanalysis', 'CVE Modified', 'CWE Remap', 'CVE CISA KEV Update', 'CVE Rejected'"`
 	ChangeStartDate string `json:"change_start_date,omitempty" jsonschema:"Changed on or after. Requires change_end_date"`
 	ChangeEndDate   string `json:"change_end_date,omitempty"   jsonschema:"Changed on or before. Requires change_start_date"`
-	Limit           int32  `json:"limit,omitempty"             jsonschema:"Results per page (default 20, max 100)"`
+	Limit           int32  `json:"limit,omitempty"             jsonschema:"Results per page (default 10, max 100). A change can carry large old and new values, so keep this small"`
 	StartCursor     bool   `json:"start_cursor,omitempty"      jsonschema:"Set true on the first call to enable cursor-based pagination"`
 	Cursor          string `json:"cursor,omitempty"            jsonschema:"Cursor token from a previous next_cursor to fetch the next page"`
 }
@@ -46,7 +46,7 @@ func MakeSearchNVDCVEHistoryHandler(vc client.Client) mcp.ToolHandlerFor[searchN
 			EventName:       args.EventName,
 			ChangeStartDate: args.ChangeStartDate,
 			ChangeEndDate:   args.ChangeEndDate,
-			Page:            nvdPage(nvdLimit(args.Limit, 20, 100), args.StartCursor, args.Cursor),
+			Page:            nvdPage(nvdLimit(args.Limit, 10, 100), args.StartCursor, args.Cursor),
 		})
 		if err != nil {
 			return nil, nil, err
