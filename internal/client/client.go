@@ -31,6 +31,12 @@ type Client interface {
 	SearchAdvisory(ctx context.Context, q SearchAdvisoryQuery) (*SearchAdvisoryResult, error)
 	ListAdvisoryBackups(ctx context.Context) ([]vulncheck.BackupFeedItem, error)
 	GetAdvisoryBackup(ctx context.Context, name string) (*vulncheck.BackupBackupResponse, error)
+	// NVD API 2.0 compatible endpoints (/rest/json)
+	SearchNVDCVEs(ctx context.Context, q NVDCVEsQuery) (*NVDResult[vulncheck.NvdcvesNvdCveExtended], error)
+	SearchNVDCVEHistory(ctx context.Context, q NVDCVEHistoryQuery) (*NVDResult[vulncheck.RestNvdChange], error)
+	SearchNVDCPEs(ctx context.Context, q NVDCPEsQuery) (*NVDResult[vulncheck.NvdcpesNvdCpe], error)
+	SearchNVDCPEMatch(ctx context.Context, q NVDCPEMatchQuery) (*NVDResult[vulncheck.NvdcpematchNvdMatchString], error)
+	SearchNVDSources(ctx context.Context, q NVDSourcesQuery) (*NVDResult[vulncheck.NvdsourceNvdSource], error)
 }
 
 // VulncheckClient is the concrete client backed by the VulnCheck public API.

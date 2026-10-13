@@ -107,10 +107,19 @@ const responseSizeKey = "response_size"
 //
 // This is one shared list rather than a per-tool accessor: vulnerability-keyed indices
 // carry the CVE in `cve` while the exploit index puts it in `id`, host-oriented indices
-// are keyed by address instead, and v4 advisories nest it under CVE 5.x metadata. A fixed
+// are keyed by address instead, v4 advisories nest it under CVE 5.x metadata, and the
+// NVD-compatible records use NVD's camelCase names (a match criteria row its
+// `matchCriteriaId`, a dictionary row its `cpeName`).
+//
+// NVD's change-history rows are deliberately left unnamed. Their only identifiers are
+// `cveId`, which every row of one CVE's history shares, and `cveChangeId`, which the API
+// cannot fetch by. Named by either, a trimmed history page told the caller to fetch "the
+// records named in removed_ids" and listed one CVE five times — a route that returns the
+// same page. Unnamed, the report still counts them in rows_removed and the note's other
+// remedy, narrowing the query, is the one that works. A fixed
 // precedence covers all of them, and a row matching none of them simply goes unnamed —
 // the same outcome as a per-tool accessor returning "".
-var rowNameKeys = []string{"id", "cve", "cve_id", "ip", "src_ip", "cpe", "purl"}
+var rowNameKeys = []string{"id", "cve", "cve_id", "ip", "src_ip", "cpe", "purl", "matchCriteriaId", "cpeName"}
 
 // capReport describes what was done to a response. It travels in the envelope, beside the
 // row list rather than inside any record, so the records themselves gain and lose no

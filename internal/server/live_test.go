@@ -87,6 +87,43 @@ func TestLiveResponseSizeContract(t *testing.T) {
 					listRecentAdvisoriesArgs{Limit: 100})
 			},
 		},
+		{
+			// 127 KB as a single NVD record, most of it vcConfigurations.
+			name: "search_nvd_cves/log4shell",
+			call: func() (*mcp.CallToolResult, any, error) {
+				return MakeSearchNVDCVEsHandler(vc)(context.Background(), nil,
+					searchNVDCVEsArgs{CVEID: "CVE-2021-44228"})
+			},
+		},
+		{
+			name: "search_nvd_cve_history/log4shell",
+			call: func() (*mcp.CallToolResult, any, error) {
+				return MakeSearchNVDCVEHistoryHandler(vc)(context.Background(), nil,
+					searchNVDCVEHistoryArgs{CVEID: "CVE-2021-44228", Limit: 100})
+			},
+		},
+		{
+			name: "search_nvd_cpes/log4j",
+			call: func() (*mcp.CallToolResult, any, error) {
+				return MakeSearchNVDCPEsHandler(vc)(context.Background(), nil,
+					searchNVDCPEsArgs{CPEMatchString: "cpe:2.3:a:apache:log4j", Limit: 100})
+			},
+		},
+		{
+			// 395 criteria and 363 KB upstream: the heaviest of the NVD endpoints per CVE.
+			name: "search_nvd_cpe_match/log4shell",
+			call: func() (*mcp.CallToolResult, any, error) {
+				return MakeSearchNVDCPEMatchHandler(vc)(context.Background(), nil,
+					searchNVDCPEMatchArgs{CVEID: "CVE-2021-44228", Limit: 50})
+			},
+		},
+		{
+			name: "search_nvd_sources",
+			call: func() (*mcp.CallToolResult, any, error) {
+				return MakeSearchNVDSourcesHandler(vc)(context.Background(), nil,
+					searchNVDSourcesArgs{Limit: 100})
+			},
+		},
 	}
 
 	for _, tc := range cases {
