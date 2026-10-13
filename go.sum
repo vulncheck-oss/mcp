@@ -16,8 +16,8 @@ github.com/segmentio/encoding v0.5.4 h1:OW1VRern8Nw6ITAtwSZ7Idrl3MXCFwXHPgqESYfv
 github.com/segmentio/encoding v0.5.4/go.mod h1:HS1ZKa3kSN32ZHVZ7ZLPLXWvOVIiZtyJnO1gPH1sKt0=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
-github.com/vulncheck-oss/sdk-go-v2/v2 v2.1.29 h1:NYQdO1mp7OpubPFAZYqrCuWpyLyazYfIW49zRXTEPxo=
-github.com/vulncheck-oss/sdk-go-v2/v2 v2.1.29/go.mod h1:EXqRvNHUnO4QIC7OaIleh9hJw+Wg7cNAebsONqc2kz0=
+github.com/vulncheck-oss/sdk-go-v2/v2 v2.1.30 h1:redgBcBHkbLdCTz8iuiEe/0qYpPz4pmK77V5lUWYQJY=
+github.com/vulncheck-oss/sdk-go-v2/v2 v2.1.30/go.mod h1:EXqRvNHUnO4QIC7OaIleh9hJw+Wg7cNAebsONqc2kz0=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=

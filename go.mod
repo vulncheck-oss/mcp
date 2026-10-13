@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/stretchr/testify v1.12.1
-	github.com/vulncheck-oss/sdk-go-v2/v2 v2.1.29
+	github.com/vulncheck-oss/sdk-go-v2/v2 v2.1.30
 )
 
 require (
