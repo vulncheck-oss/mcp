@@ -73,6 +73,13 @@ different ways, and the second is the more dangerous:
   are indistinguishable, and the failure points at *"nothing found"* — the answer you should
   be least willing to pass on unchecked.
 
+The `search_nvd_*` tools are not affected. They send only the NVD parameters their endpoints
+implement, and those endpoints validate what they receive: a malformed CVE ID or CPE, an
+unknown `event_name` or tag, a date range missing an end or longer than 120 days is refused
+with an error naming the parameter, never answered with a widened set. Two exceptions, both
+narrow rather than wide: `match_criteria_id` and `cpe_name_id` are opaque identifiers and are
+not format-checked, so an unknown one matches nothing.
+
 Two further limits on the five tools that *are* checked. An index does not always publish its
 parameter list on a zero-row response, and where the list is absent nothing is checked — safely,
 because an ignored filter can only widen a result, so an empty answer cannot be hiding a
@@ -167,6 +174,26 @@ Your MCP client lists the available arguments for each tool; the summaries below
 | Tool | Description |
 |------|-------------|
 | `search_cve` | Search all VulnCheck indices for a CVE ID. Returns matching records aggregated across advisories, exploits, threat intelligence, and vulnerability databases. Supports cursor-based pagination. |
+
+## NVD API 2.0 compatibility
+
+These query VulnCheck's NVD API 2.0 compatible endpoints (`/rest/json`), which return NVD's
+own records and accept NVD's filters. They work with **any VulnCheck API token, including
+community**: for a community token they are the only route to NVD's change history, CPE match
+criteria and source list, which the index tools refuse with HTTP 402. NVD's CPE dictionary is
+reachable only through `search_nvd_cpes` for any token.
+
+They are a fallback, not a second source. For what is known about a CVE, use `search_cve`.
+In CVE records, `configurations` is NVD's own data and `vcConfigurations` is VulnCheck's
+enrichment. Date filters are ISO-8601, need both ends, and span at most 120 days.
+
+| Tool | Description |
+|------|-------------|
+| `search_nvd_cves` | Search CVE records as NVD publishes them. Filter by CVE ID, CPE name or match string with a version range, publish or modified date range, KEV, CVE tag, rejection status or source. `limit` defaults to 5, maximum 20. Cursor-paged. |
+| `search_nvd_cve_history` | Search NVD's change history: each event in which NVD changed a CVE (initial analysis, reanalysis, CVSS and CWE changes, CPE remaps, KEV updates, rejections), with old and new values. Filter by CVE ID, event name or change date range. `limit` defaults to 20, maximum 100. Cursor-paged. |
+| `search_nvd_cpes` | Search NVD's CPE dictionary for official CPE names, titles, references and deprecations, by CPE prefix, `cpe_name_id` or match criteria. For the CVEs affecting a CPE, use `get_cpe_cves`. `limit` defaults to 20, maximum 100. Cursor-paged. |
+| `search_nvd_cpe_match` | Search NVD's CPE match criteria: the patterns and version ranges in a CVE's configurations, each expanded to the CPE names it covers. Filter by CVE ID, match criteria ID or modified date range. `limit` defaults to 10, maximum 50. Cursor-paged. |
+| `search_nvd_sources` | List the organisations NVD records as data sources, with their identifiers and the CVSS and CWE data NVD accepts from each. `limit` defaults to 20, maximum 100. Pages by `start_index`; there is no cursor. |
 
 ## CPE & PURL
 

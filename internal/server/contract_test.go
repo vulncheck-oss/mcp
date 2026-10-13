@@ -224,6 +224,99 @@ func TestResponseSizeContract(t *testing.T) {
 				})
 			},
 		},
+		{
+			name: "search_nvd_cves",
+			run: func(t *testing.T) *mcp.CallToolResult {
+				rows := nvdRows[vulncheck.NvdcvesNvdCveExtended](t, 20, func(i int) map[string]any {
+					record := bulkyRecord(fmt.Sprintf("CVE-2024-%04d", i), 400)
+					record["id"] = record["cve"] // NVD names the CVE in id
+					return record
+				})
+				return runTool(t, &mockClient{
+					searchNVDCVEsFn: func(context.Context, client.NVDCVEsQuery) (*client.NVDResult[vulncheck.NvdcvesNvdCveExtended], error) {
+						return &client.NVDResult[vulncheck.NvdcvesNvdCveExtended]{Data: rows, Total: 20}, nil
+					},
+				}, func(vc client.Client) toolCall {
+					return call(MakeSearchNVDCVEsHandler(vc), searchNVDCVEsArgs{Limit: 20})
+				})
+			},
+		},
+		{
+			name: "search_nvd_cve_history",
+			run: func(t *testing.T) *mcp.CallToolResult {
+				rows := nvdRows[vulncheck.RestNvdChange](t, 40, func(i int) map[string]any {
+					details := make([]any, 400)
+					for j := range details {
+						details[j] = map[string]any{"type": "Reference", "action": "Added", "newValue": fmt.Sprintf("https://example.test/%d/%d", i, j)}
+					}
+					return map[string]any{"cveId": fmt.Sprintf("CVE-2024-%04d", i), "eventName": "CVE Modified", "details": details}
+				})
+				return runTool(t, &mockClient{
+					searchNVDCVEHistoryFn: func(context.Context, client.NVDCVEHistoryQuery) (*client.NVDResult[vulncheck.RestNvdChange], error) {
+						return &client.NVDResult[vulncheck.RestNvdChange]{Data: rows, Total: 40}, nil
+					},
+				}, func(vc client.Client) toolCall {
+					return call(MakeSearchNVDCVEHistoryHandler(vc), searchNVDCVEHistoryArgs{Limit: 40})
+				})
+			},
+		},
+		{
+			name: "search_nvd_cpes",
+			run: func(t *testing.T) *mcp.CallToolResult {
+				rows := nvdRows[vulncheck.NvdcpesNvdCpe](t, 40, func(i int) map[string]any {
+					refs := make([]any, 400)
+					for j := range refs {
+						refs[j] = map[string]any{"ref": fmt.Sprintf("https://example.test/%d/%d", i, j), "type": "Advisory"}
+					}
+					return map[string]any{"cpeName": fmt.Sprintf("cpe:2.3:a:vendor:product%d:*:*:*:*:*:*:*:*", i), "refs": refs}
+				})
+				return runTool(t, &mockClient{
+					searchNVDCPEsFn: func(context.Context, client.NVDCPEsQuery) (*client.NVDResult[vulncheck.NvdcpesNvdCpe], error) {
+						return &client.NVDResult[vulncheck.NvdcpesNvdCpe]{Data: rows, Total: 40}, nil
+					},
+				}, func(vc client.Client) toolCall {
+					return call(MakeSearchNVDCPEsHandler(vc), searchNVDCPEsArgs{Limit: 40})
+				})
+			},
+		},
+		{
+			name: "search_nvd_cpe_match",
+			run: func(t *testing.T) *mcp.CallToolResult {
+				rows := nvdRows[vulncheck.NvdcpematchNvdMatchString](t, 40, func(i int) map[string]any {
+					matches := make([]any, 400)
+					for j := range matches {
+						matches[j] = map[string]any{"cpeName": fmt.Sprintf("cpe:2.3:a:vendor:product:%d.%d:*:*:*:*:*:*:*", i, j), "cpeNameId": fmt.Sprintf("id-%d-%d", i, j)}
+					}
+					return map[string]any{"criteria": "cpe:2.3:a:vendor:product:*:*:*:*:*:*:*:*", "matchCriteriaId": fmt.Sprintf("mc-%d", i), "matches": matches}
+				})
+				return runTool(t, &mockClient{
+					searchNVDCPEMatchFn: func(context.Context, client.NVDCPEMatchQuery) (*client.NVDResult[vulncheck.NvdcpematchNvdMatchString], error) {
+						return &client.NVDResult[vulncheck.NvdcpematchNvdMatchString]{Data: rows, Total: 40}, nil
+					},
+				}, func(vc client.Client) toolCall {
+					return call(MakeSearchNVDCPEMatchHandler(vc), searchNVDCPEMatchArgs{Limit: 40})
+				})
+			},
+		},
+		{
+			name: "search_nvd_sources",
+			run: func(t *testing.T) *mcp.CallToolResult {
+				rows := nvdRows[vulncheck.NvdsourceNvdSource](t, 40, func(i int) map[string]any {
+					ids := make([]any, 400)
+					for j := range ids {
+						ids[j] = fmt.Sprintf("source-%d-%d@example.test", i, j)
+					}
+					return map[string]any{"name": fmt.Sprintf("Source %d", i), "sourceIdentifiers": ids}
+				})
+				return runTool(t, &mockClient{
+					searchNVDSourcesFn: func(context.Context, client.NVDSourcesQuery) (*client.NVDResult[vulncheck.NvdsourceNvdSource], error) {
+						return &client.NVDResult[vulncheck.NvdsourceNvdSource]{Data: rows, Total: 40}, nil
+					},
+				}, func(vc client.Client) toolCall {
+					return call(MakeSearchNVDSourcesHandler(vc), searchNVDSourcesArgs{Limit: 40})
+				})
+			},
+		},
 	}
 
 	for _, tc := range tools {
@@ -292,4 +385,15 @@ func runTool(t *testing.T, mock *mockClient, build func(client.Client) toolCall)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	return result
+}
+
+// nvdRows decodes generated maps into the SDK's NVD record type, the way the client does,
+// so the rows are shaped exactly as a real response would be.
+func nvdRows[T any](t *testing.T, n int, build func(i int) map[string]any) []T {
+	t.Helper()
+	rows := make([]T, n)
+	for i := range rows {
+		require.NoError(t, json.Unmarshal(mustMarshal(t, build(i)), &rows[i]))
+	}
+	return rows
 }

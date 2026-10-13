@@ -107,10 +107,12 @@ const responseSizeKey = "response_size"
 //
 // This is one shared list rather than a per-tool accessor: vulnerability-keyed indices
 // carry the CVE in `cve` while the exploit index puts it in `id`, host-oriented indices
-// are keyed by address instead, and v4 advisories nest it under CVE 5.x metadata. A fixed
+// are keyed by address instead, v4 advisories nest it under CVE 5.x metadata, and the
+// NVD-compatible records use NVD's camelCase names (a change names its CVE in `cveId`, a
+// match criteria row its `matchCriteriaId`, a dictionary row its `cpeName`). A fixed
 // precedence covers all of them, and a row matching none of them simply goes unnamed —
 // the same outcome as a per-tool accessor returning "".
-var rowNameKeys = []string{"id", "cve", "cve_id", "ip", "src_ip", "cpe", "purl"}
+var rowNameKeys = []string{"id", "cve", "cve_id", "ip", "src_ip", "cpe", "purl", "cveId", "matchCriteriaId", "cpeName"}
 
 // capReport describes what was done to a response. It travels in the envelope, beside the
 // row list rather than inside any record, so the records themselves gain and lose no

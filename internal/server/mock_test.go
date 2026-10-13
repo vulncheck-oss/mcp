@@ -27,6 +27,11 @@ type mockClient struct {
 	searchCVEFn           func(ctx context.Context, q client.SearchCVEQuery) (*client.SearchCVEResult, error)
 	searchDocsFn          func(ctx context.Context) (string, error)
 	getDocFn              func(ctx context.Context, url string) (string, error)
+	searchNVDCVEsFn       func(ctx context.Context, q client.NVDCVEsQuery) (*client.NVDResult[vulncheck.NvdcvesNvdCveExtended], error)
+	searchNVDCVEHistoryFn func(ctx context.Context, q client.NVDCVEHistoryQuery) (*client.NVDResult[vulncheck.RestNvdChange], error)
+	searchNVDCPEsFn       func(ctx context.Context, q client.NVDCPEsQuery) (*client.NVDResult[vulncheck.NvdcpesNvdCpe], error)
+	searchNVDCPEMatchFn   func(ctx context.Context, q client.NVDCPEMatchQuery) (*client.NVDResult[vulncheck.NvdcpematchNvdMatchString], error)
+	searchNVDSourcesFn    func(ctx context.Context, q client.NVDSourcesQuery) (*client.NVDResult[vulncheck.NvdsourceNvdSource], error)
 }
 
 func (m *mockClient) ListIndices(ctx context.Context) ([]client.Entry, error) {
@@ -103,4 +108,24 @@ func (m *mockClient) SearchDocs(ctx context.Context) (string, error) {
 
 func (m *mockClient) GetDoc(ctx context.Context, url string) (string, error) {
 	return m.getDocFn(ctx, url)
+}
+
+func (m *mockClient) SearchNVDCVEs(ctx context.Context, q client.NVDCVEsQuery) (*client.NVDResult[vulncheck.NvdcvesNvdCveExtended], error) {
+	return m.searchNVDCVEsFn(ctx, q)
+}
+
+func (m *mockClient) SearchNVDCVEHistory(ctx context.Context, q client.NVDCVEHistoryQuery) (*client.NVDResult[vulncheck.RestNvdChange], error) {
+	return m.searchNVDCVEHistoryFn(ctx, q)
+}
+
+func (m *mockClient) SearchNVDCPEs(ctx context.Context, q client.NVDCPEsQuery) (*client.NVDResult[vulncheck.NvdcpesNvdCpe], error) {
+	return m.searchNVDCPEsFn(ctx, q)
+}
+
+func (m *mockClient) SearchNVDCPEMatch(ctx context.Context, q client.NVDCPEMatchQuery) (*client.NVDResult[vulncheck.NvdcpematchNvdMatchString], error) {
+	return m.searchNVDCPEMatchFn(ctx, q)
+}
+
+func (m *mockClient) SearchNVDSources(ctx context.Context, q client.NVDSourcesQuery) (*client.NVDResult[vulncheck.NvdsourceNvdSource], error) {
+	return m.searchNVDSourcesFn(ctx, q)
 }

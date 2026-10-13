@@ -37,6 +37,45 @@ func TestNewServer_ToolsRegistered(t *testing.T) {
 	assert.Contains(t, names, "search_index")
 	assert.Contains(t, names, "get_cpe_cves")
 	assert.Contains(t, names, "search_cpe")
+	for _, name := range []string{"search_nvd_cves", "search_nvd_cve_history", "search_nvd_cpes", "search_nvd_cpe_match", "search_nvd_sources"} {
+		assert.Contains(t, names, name)
+	}
+}
+
+// TestServerInstructions_NVDToolsAreAFallback guards how the search_nvd_* tools are
+// positioned. Their CVE records overlap search_cve and search_index, so the instructions
+// must keep search_cve the answer for a CVE and name the three reasons to use these tools
+// instead: the user wants NVD's own data, the data exists only there, or a VulnCheck tool
+// refused it to a community token.
+func TestServerInstructions_NVDToolsAreAFallback(t *testing.T) {
+	t.Run("names every NVD tool", func(t *testing.T) {
+		for _, tool := range []string{"search_nvd_cve_history", "search_nvd_cpe_match", "search_nvd_cpes", "search_nvd_sources", "search_nvd_*"} {
+			assert.Contains(t, serverInstructions, tool)
+		}
+	})
+
+	t.Run("keeps search_cve the default and forbids cross-checking it", func(t *testing.T) {
+		assert.Contains(t, serverInstructions, "They are a fallback, not a second source")
+		assert.Contains(t, serverInstructions, "For what is known about a CVE use search_cve")
+		assert.Contains(t, serverInstructions, "do not call a search_nvd_* tool to cross-check or enrich")
+	})
+
+	t.Run("names the community route and the refusal that leads to it", func(t *testing.T) {
+		assert.Contains(t, serverInstructions, "including community")
+		assert.Contains(t, serverInstructions, "HTTP 402")
+	})
+
+	t.Run("does not let VulnCheck's enrichment pass as NVD's", func(t *testing.T) {
+		assert.Contains(t, serverInstructions, "do not attribute vcConfigurations to NVD")
+	})
+}
+
+func TestNVDToolDescriptions_SayAnyTokenWorks(t *testing.T) {
+	for _, tool := range []*mcp.Tool{SearchNVDCVEsTool, SearchNVDCVEHistoryTool, SearchNVDCPEsTool, SearchNVDCPEMatchTool, SearchNVDSourcesTool} {
+		assert.Contains(t, tool.Description, nvdCommunityClause, tool.Name)
+	}
+	assert.Contains(t, SearchNVDCVEsTool.Description, "for what is known about a CVE use search_cve",
+		"the one NVD tool that overlaps search_cve must defer to it")
 }
 
 // TestServerInstructions_RoutesExposureQuestionsAwayFromSearchCVE guards the

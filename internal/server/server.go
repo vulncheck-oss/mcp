@@ -44,6 +44,12 @@ var tools = []func(*mcp.Server, client.Client){
 	// v4/backup
 	registerListAdvisoryBackups,
 	registerGetAdvisoryBackup,
+	// rest/json — NVD API 2.0 compatible
+	registerSearchNVDCVEs,
+	registerSearchNVDCVEHistory,
+	registerSearchNVDCPEs,
+	registerSearchNVDCPEMatch,
+	registerSearchNVDSources,
 }
 
 // serverInstructions routes tool choice by the subject of the question.
@@ -66,6 +72,14 @@ var tools = []func(*mcp.Server, client.Client){
 // selects CVEs by them. Describing that boundary as a topic — "use search_cve for
 // maturity" — sent every "which CVEs are weaponized" question to the one tool that
 // cannot filter on it.
+//
+// The search_nvd_* tools are written as a fallback rather than a peer of search_cve.
+// Their CVE records overlap what search_cve and search_index already return, and a model
+// offered two sources for one question tends to call both. What only they provide is the
+// route a community token has to NVD's change history, match criteria and source list,
+// which the native index routes refuse it with an HTTP 402, and NVD's CPE dictionary,
+// which no other tool reaches for any token. The paragraph names both reasons, and the
+// 402, so a model that hits the refusal knows where the data is.
 const serverInstructions = `Route by what the question is about.
 
 What is known about a named CVE — severity, whether exploits exist and how mature they are, KEV status, advisories, threat actor, ransomware and botnet association: use search_cve. It aggregates these categories across many indices and is normally sufficient on its own. Do not call search_index to cross-check or enrich what it returns.
@@ -78,6 +92,12 @@ Internet exposure and observed attack activity: search_cve does not cover these.
 - search_canaries — exploitation attempts observed against VulnCheck's own deliberately vulnerable canary hosts. Answers "is this CVE being exploited in the wild, and by whom".
 
 These three describe populations of hosts and events rather than one record per CVE. They return a sample, and total reports the size of the whole matching set — report total rather than counting the rows returned, and do not paginate in order to enumerate them.
+
+NVD's own data: the search_nvd_* tools query VulnCheck's NVD API 2.0 compatible endpoints and work with any VulnCheck API token, including community. They are a fallback, not a second source. For what is known about a CVE use search_cve, and do not call a search_nvd_* tool to cross-check or enrich what it returns. Use them when:
+- the user asks what NVD itself publishes, or needs NVD's own fields or filters;
+- the question is about NVD's change history (search_nvd_cve_history), CPE match criteria (search_nvd_cpe_match), CPE dictionary (search_nvd_cpes) or source list (search_nvd_sources);
+- another tool refuses NVD data because the token is not entitled to it (an HTTP 402), as community tokens are for most indices.
+In NVD CVE records, configurations is NVD's own data and vcConfigurations is VulnCheck's enrichment; do not attribute vcConfigurations to NVD.
 
 Otherwise call search_index only when the user explicitly asks for a specific named index's raw record, e.g. "show me the NVD2 record".
 
